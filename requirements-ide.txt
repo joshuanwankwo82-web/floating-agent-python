@@ -1,0 +1,4 @@
+# Standalone IDE GUI only. No voice/model/browser stack or API key required.
+# Tk is provided by Python (python3-tk on Linux where needed).
+customtkinter>=5.2.2,<6
+Pillow>=10.0
