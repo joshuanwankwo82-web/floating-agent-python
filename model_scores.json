@@ -1,0 +1,1401 @@
+{
+"audio": {
+"drama-3": [
+964,
+"arena"
+],
+"gemini-3-8-flash-tts": [
+1282,
+"arena"
+],
+"heygen-voice-1": [
+1166,
+"arena"
+],
+"mai-voice-2": [
+1186,
+"arena"
+],
+"mai-voice-2-flash": [
+1138,
+"arena"
+],
+"qwen-audio-3-0-tts-flash": [
+852,
+"arena"
+],
+"s2-1-pro": [
+953,
+"arena"
+]
+},
+"built": 1795521202,
+"image": {
+"flux-2-flex": [
+1246,
+"arena"
+],
+"flux-2-klein-4b": [
+1088,
+"arena"
+],
+"flux-2-pro": [
+1216,
+"arena"
+],
+"gemini-2-5-flash-image": [
+1221,
+"arena"
+],
+"gemini-3-1-flash-image": [
+1314,
+"arena"
+],
+"gemini-3-pro-image": [
+1288,
+"arena"
+],
+"gpt-5-image": [
+1235,
+"arena"
+],
+"gpt-5-image-mini": [
+1233,
+"arena"
+],
+"gpt-image-1": [
+1131,
+"arena"
+],
+"mai-image-2-5": [
+1271,
+"arena"
+],
+"mai-image-2-6": [
+1339,
+"arena"
+],
+"mai-image-2-6-flash": [
+1326,
+"arena"
+],
+"mai-image-2-7": [
+1366,
+"arena"
+],
+"mai-image-2-7-flash": [
+1354,
+"arena"
+],
+"riverflow-v2-5-pro": [
+1385,
+"arena"
+]
+},
+"text": {
+"aion-2-0": [
+3.6,
+"price"
+],
+"aion-3-0": [
+19.9,
+"price"
+],
+"aion-3-0-mini": [
+10.8,
+"price"
+],
+"aion-3-5": [
+30.2,
+"price"
+],
+"aion-3-5-mini": [
+21.1,
+"price"
+],
+"aion-rp-llama-3-1-8b": [
+1.1,
+"price"
+],
+"beam-1-0-501b-a23b": [
+17.7,
+"aa"
+],
+"claude-fable": [
+43.7,
+"price"
+],
+"claude-fable-5": [
+35.5,
+"arena"
+],
+"claude-fable-5-1": [
+50.0,
+"aa"
+],
+"claude-fable-5-2": [
+64.6,
+"aa"
+],
+"claude-haiku": [
+13.3,
+"price"
+],
+"claude-haiku-4-5": [
+7.4,
+"aa"
+],
+"claude-haiku-5-5": [
+36.5,
+"aa"
+],
+"claude-opus": [
+35.9,
+"price"
+],
+"claude-opus-4-1": [
+13.6,
+"arena"
+],
+"claude-opus-4-5": [
+23.1,
+"arena"
+],
+"claude-opus-4-6": [
+26.1,
+"arena"
+],
+"claude-opus-4-7": [
+36.9,
+"price"
+],
+"claude-opus-4-8": [
+23.1,
+"arena"
+],
+"claude-opus-5": [
+44.2,
+"aa"
+],
+"claude-opus-5-5": [
+59.1,
+"aa"
+],
+"claude-sonnet": [
+32.0,
+"price"
+],
+"claude-sonnet-4-5": [
+17.4,
+"arena"
+],
+"claude-sonnet-4-6": [
+24.9,
+"arena"
+],
+"claude-sonnet-5": [
+24.9,
+"arena"
+],
+"claude-sonnet-5-5": [
+54.5,
+"aa"
+],
+"codestral": [
+6.2,
+"arena"
+],
+"command-a": [
+2.7,
+"price"
+],
+"command-a-plus": [
+6.2,
+"aa"
+],
+"command-r-08": [
+0.8,
+"price"
+],
+"command-r-plus-08": [
+1.4,
+"price"
+],
+"command-r7b-12": [
+0.8,
+"price"
+],
+"cydonia-24b-v4-1": [
+2.0,
+"price"
+],
+"daisyrose-27b": [
+27.1,
+"price"
+],
+"deepseek": [
+6.3,
+"arena"
+],
+"deepseek-chat-v3": [
+1.6,
+"price"
+],
+"deepseek-chat-v3-1": [
+6.3,
+"arena"
+],
+"deepseek-flash": [
+17.9,
+"price"
+],
+"deepseek-pro": [
+37.9,
+"price"
+],
+"deepseek-r1": [
+7.4,
+"arena"
+],
+"deepseek-v3-1-terminus": [
+13.6,
+"arena"
+],
+"deepseek-v3-2": [
+13.6,
+"arena"
+],
+"deepseek-v4-1-flash": [
+32.6,
+"aa"
+],
+"deepseek-v4-flash": [
+17.4,
+"arena"
+],
+"deepseek-v4-flash-vision": [
+23.5,
+"price"
+],
+"deepseek-v4-pro": [
+23.1,
+"aa"
+],
+"devstral": [
+3.7,
+"price"
+],
+"dolphin-mistral-24b-venice-edition": [
+1.8,
+"price"
+],
+"ember-1": [
+45.4,
+"price"
+],
+"ernie-light-dt-1-0-intl": [
+40.3,
+"price"
+],
+"fugu-max": [
+38.5,
+"price"
+],
+"fugu-ultra": [
+42.9,
+"price"
+],
+"fugu-ultra-v2": [
+48.5,
+"price"
+],
+"gemini-2-5-flash": [
+6.3,
+"arena"
+],
+"gemini-2-5-flash-lite": [
+2.6,
+"price"
+],
+"gemini-2-5-pro": [
+12.5,
+"arena"
+],
+"gemini-3-1-flash-lite": [
+6.2,
+"aa"
+],
+"gemini-3-1-pro": [
+23.1,
+"arena"
+],
+"gemini-3-1-pro-preview-customtools": [
+29.1,
+"price"
+],
+"gemini-3-5-flash": [
+26.1,
+"arena"
+],
+"gemini-3-5-flash-lite": [
+11.7,
+"aa"
+],
+"gemini-3-6-flash": [
+30.8,
+"arena"
+],
+"gemini-3-7-flash": [
+35.5,
+"arena"
+],
+"gemini-3-8-flash": [
+30.8,
+"aa"
+],
+"gemini-3-flash": [
+17.4,
+"arena"
+],
+"gemini-4-argon": [
+50.4,
+"aa"
+],
+"gemini-4-carbon": [
+60.0,
+"aa"
+],
+"gemini-4-hydrogen": [
+53.9,
+"aa"
+],
+"gemini-4-neon": [
+61.4,
+"aa"
+],
+"gemini-flash": [
+30.5,
+"price"
+],
+"gemini-pro": [
+32.3,
+"price"
+],
+"gemma-2-27b": [
+0.4,
+"price"
+],
+"gemma-3-12b": [
+1.0,
+"price"
+],
+"gemma-3-27b": [
+1.0,
+"price"
+],
+"gemma-3-4b": [
+0.8,
+"price"
+],
+"gemma-4-26b-a4b": [
+3.3,
+"price"
+],
+"gemma-4-31b": [
+4.4,
+"aa"
+],
+"glimpse": [
+27.5,
+"price"
+],
+"glm": [
+28.2,
+"price"
+],
+"glm-4-5": [
+13.6,
+"arena"
+],
+"glm-4-5-air": [
+12.5,
+"arena"
+],
+"glm-4-5v": [
+2.0,
+"price"
+],
+"glm-4-6": [
+13.6,
+"arena"
+],
+"glm-4-6v": [
+2.7,
+"price"
+],
+"glm-4-7": [
+17.4,
+"arena"
+],
+"glm-4-7-flash": [
+13.6,
+"arena"
+],
+"glm-5": [
+23.1,
+"arena"
+],
+"glm-5-1": [
+30.8,
+"arena"
+],
+"glm-5-2": [
+26.1,
+"arena"
+],
+"glm-5-3": [
+31.7,
+"aa"
+],
+"glm-5-3-flash": [
+27.8,
+"aa"
+],
+"glm-5-3-flashx": [
+29.6,
+"price"
+],
+"glm-5-3-flashx-legal": [
+32.8,
+"price"
+],
+"glm-5-3-prime": [
+38.6,
+"price"
+],
+"glm-5v": [
+17.4,
+"arena"
+],
+"glm-flash": [
+11.0,
+"price"
+],
+"gpt": [
+33.1,
+"price"
+],
+"gpt-3-5": [
+0.3,
+"price"
+],
+"gpt-3-5-turbo-16k": [
+0.3,
+"price"
+],
+"gpt-4": [
+0.4,
+"price"
+],
+"gpt-4-1": [
+6.2,
+"arena"
+],
+"gpt-4-1-mini": [
+6.2,
+"arena"
+],
+"gpt-4-1-nano": [
+3.8,
+"arena"
+],
+"gpt-4o": [
+3.8,
+"arena"
+],
+"gpt-4o-mini": [
+0.7,
+"price"
+],
+"gpt-5": [
+14.2,
+"arena"
+],
+"gpt-5-1": [
+13.6,
+"arena"
+],
+"gpt-5-1-codex": [
+17.4,
+"arena"
+],
+"gpt-5-1-codex-max": [
+15.5,
+"price"
+],
+"gpt-5-1-codex-mini": [
+6.2,
+"arena"
+],
+"gpt-5-2": [
+14.2,
+"arena"
+],
+"gpt-5-2-codex": [
+20.5,
+"price"
+],
+"gpt-5-2-pro": [
+33.5,
+"price"
+],
+"gpt-5-3-codex": [
+12.5,
+"arena"
+],
+"gpt-5-4": [
+17.4,
+"arena"
+],
+"gpt-5-4-mini": [
+17.8,
+"price"
+],
+"gpt-5-4-nano": [
+9.8,
+"price"
+],
+"gpt-5-4-pro": [
+46.6,
+"price"
+],
+"gpt-5-5": [
+23.1,
+"arena"
+],
+"gpt-5-5-pro": [
+50.1,
+"price"
+],
+"gpt-5-6-luna": [
+23.8,
+"aa"
+],
+"gpt-5-6-luna-pro": [
+24.3,
+"price"
+],
+"gpt-5-6-sol": [
+41.8,
+"price"
+],
+"gpt-5-6-sol-pro": [
+41.8,
+"price"
+],
+"gpt-5-6-terra": [
+32.3,
+"aa"
+],
+"gpt-5-6-terra-pro": [
+38.6,
+"price"
+],
+"gpt-5-mini": [
+7.4,
+"arena"
+],
+"gpt-5-nano": [
+6.2,
+"arena"
+],
+"gpt-5-pro": [
+26.8,
+"price"
+],
+"gpt-6-1-sol": [
+54.6,
+"aa"
+],
+"gpt-6-1-sol-pro": [
+43.3,
+"price"
+],
+"gpt-6-1-terra": [
+51.3,
+"aa"
+],
+"gpt-6-1-terra-pro": [
+40.9,
+"price"
+],
+"gpt-6-2-astra": [
+62.1,
+"aa"
+],
+"gpt-6-2-astra-pro": [
+55.5,
+"price"
+],
+"gpt-6-2-sol": [
+57.3,
+"aa"
+],
+"gpt-6-2-sol-pro": [
+46.8,
+"price"
+],
+"gpt-6-astra": [
+56.9,
+"aa"
+],
+"gpt-6-astra-pro": [
+51.6,
+"price"
+],
+"gpt-6-luna": [
+27.9,
+"aa"
+],
+"gpt-6-luna-pro": [
+24.2,
+"price"
+],
+"gpt-6-sol": [
+44.2,
+"aa"
+],
+"gpt-6-sol-pro": [
+42.8,
+"price"
+],
+"gpt-astra": [
+50.7,
+"price"
+],
+"gpt-luna": [
+23.4,
+"price"
+],
+"gpt-mini": [
+20.7,
+"price"
+],
+"gpt-oss-120b": [
+3.8,
+"aa"
+],
+"gpt-oss-20b": [
+3.8,
+"arena"
+],
+"gpt-oss-safeguard-20b": [
+1.9,
+"price"
+],
+"gpt-sol": [
+42.0,
+"price"
+],
+"gpt-terra": [
+37.7,
+"price"
+],
+"granite-4-2-8b": [
+5.1,
+"aa"
+],
+"grok": [
+29.2,
+"price"
+],
+"grok-4-20": [
+17.4,
+"arena"
+],
+"grok-4-20-multi-agent": [
+26.2,
+"price"
+],
+"grok-4-3": [
+13.6,
+"arena"
+],
+"grok-4-5": [
+26.1,
+"arena"
+],
+"grok-4-6": [
+31.0,
+"aa"
+],
+"grok-4-7": [
+35.5,
+"aa"
+],
+"hermes-4-405b": [
+2.7,
+"price"
+],
+"hy-mt2-1-8b": [
+1.8,
+"price"
+],
+"hy-mt2-30b-a3b": [
+2.0,
+"price"
+],
+"hy-mt2-7b": [
+2.0,
+"price"
+],
+"hy3": [
+13.6,
+"arena"
+],
+"hy4": [
+34.6,
+"aa"
+],
+"hy4-flash": [
+23.1,
+"arena"
+],
+"inkling": [
+12.5,
+"aa"
+],
+"inkling-2-mini": [
+20.1,
+"aa"
+],
+"inkling-2-small": [
+30.6,
+"aa"
+],
+"inkling-small": [
+12.9,
+"aa"
+],
+"kimi": [
+32.9,
+"price"
+],
+"kimi-k2-5": [
+17.4,
+"arena"
+],
+"kimi-k2-6": [
+23.1,
+"arena"
+],
+"kimi-k2-7-code": [
+23.1,
+"arena"
+],
+"kimi-k3": [
+17.4,
+"aa"
+],
+"kimi-k3-1-pro": [
+46.5,
+"aa"
+],
+"l3-1-euryale-70b": [
+0.9,
+"price"
+],
+"l3-lunaris-8b": [
+0.2,
+"price"
+],
+"lfm-2-5-24b-a2b": [
+13.3,
+"price"
+],
+"lfm-3-1-7b": [
+6.0,
+"aa"
+],
+"ling-3-0-flash": [
+3.1,
+"price"
+],
+"ling-3-0-flash-vl": [
+3.7,
+"price"
+],
+"ling-3-0-tiny": [
+3.0,
+"price"
+],
+"ling-3-1-flash": [
+29.6,
+"aa"
+],
+"llama-3-1-70b": [
+0.8,
+"price"
+],
+"llama-3-1-8b": [
+0.5,
+"price"
+],
+"llama-3-2-3b": [
+0.8,
+"price"
+],
+"llama-3-3-70b": [
+1.1,
+"price"
+],
+"llama-4-maverick": [
+3.8,
+"arena"
+],
+"llama-4-scout": [
+3.8,
+"arena"
+],
+"llama-guard-4-12b": [
+1.2,
+"price"
+],
+"magnum-v4-72b": [
+1.0,
+"price"
+],
+"midm-k-3-0-pro": [
+20.7,
+"price"
+],
+"mimo-v2-5": [
+23.1,
+"arena"
+],
+"mimo-v2-6-flash": [
+26.7,
+"aa"
+],
+"mimo-v2-6-pro": [
+29.9,
+"aa"
+],
+"mimo-v2-6-pro-ultraspeed": [
+41.9,
+"price"
+],
+"minimax-m2-5": [
+17.4,
+"arena"
+],
+"minimax-m2-7": [
+17.4,
+"arena"
+],
+"minimax-m3": [
+18.9,
+"aa"
+],
+"minimax-m3-1-flash": [
+29.1,
+"aa"
+],
+"ministral-14b": [
+6.2,
+"arena"
+],
+"ministral-3b": [
+6.2,
+"arena"
+],
+"ministral-8b": [
+6.2,
+"arena"
+],
+"mistral-large": [
+6.3,
+"arena"
+],
+"mistral-large-4-0": [
+26.1,
+"aa"
+],
+"mistral-medium-3": [
+6.2,
+"arena"
+],
+"mistral-medium-3-1": [
+6.3,
+"arena"
+],
+"mistral-medium-3-5": [
+4.6,
+"aa"
+],
+"mistral-nemo": [
+0.4,
+"price"
+],
+"mistral-saba": [
+0.9,
+"price"
+],
+"mistral-small": [
+4.3,
+"aa"
+],
+"mistral-small-24b": [
+0.6,
+"price"
+],
+"mistral-small-3-1-24b": [
+1.3,
+"price"
+],
+"mistral-small-3-2-24b": [
+3.8,
+"arena"
+],
+"mixtral-8x22b": [
+0.8,
+"price"
+],
+"moondream3": [
+11.9,
+"price"
+],
+"moondream3-1-9b-a2b": [
+11.9,
+"price"
+],
+"morph-v3": [
+2.3,
+"price"
+],
+"morph-v3-large": [
+2.5,
+"price"
+],
+"motif-3": [
+23.0,
+"price"
+],
+"muse-ember": [
+36.0,
+"aa"
+],
+"muse-glimmer-30b": [
+6.3,
+"aa"
+],
+"muse-spark-1-1": [
+26.1,
+"arena"
+],
+"muse-spark-1-2": [
+35.5,
+"arena"
+],
+"muse-spark-1-2-contributor": [
+16.2,
+"price"
+],
+"muse-spark-1-3": [
+36.6,
+"aa"
+],
+"muse-spark-1-3-contributor": [
+17.0,
+"price"
+],
+"muse-spark-open": [
+24.9,
+"aa"
+],
+"muse-wonder": [
+43.6,
+"aa"
+],
+"mythomax-l2-13b": [
+0.2,
+"price"
+],
+"nemotron-3-5-content-safety": [
+3.0,
+"price"
+],
+"nemotron-3-5-lightning": [
+5.5,
+"aa"
+],
+"nemotron-3-5-super-vl": [
+13.6,
+"aa"
+],
+"nemotron-3-nano-30b-a3b": [
+2.4,
+"price"
+],
+"nemotron-3-super-120b-a12b": [
+3.3,
+"price"
+],
+"nemotron-3-ultra-550b-a55b": [
+11.8,
+"aa"
+],
+"nex-n2-5-mini": [
+3.8,
+"price"
+],
+"nex-n2-5-pro": [
+9.3,
+"price"
+],
+"nex-n2-6": [
+16.7,
+"price"
+],
+"nova-2-lite-v1": [
+13.0,
+"price"
+],
+"nova-lite-v1": [
+1.0,
+"price"
+],
+"nova-micro-v1": [
+0.8,
+"price"
+],
+"nova-premier-v1": [
+20.8,
+"price"
+],
+"nova-pro-v1": [
+1.8,
+"price"
+],
+"o3": [
+6.2,
+"arena"
+],
+"o3-mini": [
+1.7,
+"price"
+],
+"o3-pro": [
+11.1,
+"price"
+],
+"o4-mini": [
+6.2,
+"arena"
+],
+"palmyra-x5": [
+22.3,
+"price"
+],
+"pareto": [
+37.2,
+"price"
+],
+"pareto-26-10": [
+37.4,
+"price"
+],
+"pareto-26-9": [
+33.0,
+"price"
+],
+"particle-1": [
+26.7,
+"price"
+],
+"perceptron-mk1": [
+3.1,
+"price"
+],
+"perceptron-mk1-5": [
+8.2,
+"price"
+],
+"phi-4": [
+0.5,
+"price"
+],
+"pixtral-large": [
+29.3,
+"price"
+],
+"qwen-2-5-72b": [
+0.6,
+"price"
+],
+"qwen-2-5-coder-32b": [
+0.8,
+"price"
+],
+"qwen-plus": [
+2.0,
+"price"
+],
+"qwen2-5-vl-72b": [
+1.3,
+"price"
+],
+"qwen3-14b": [
+0.9,
+"price"
+],
+"qwen3-235b-a22b": [
+6.2,
+"arena"
+],
+"qwen3-235b-a22b-thinking": [
+6.2,
+"arena"
+],
+"qwen3-30b-a3b": [
+3.8,
+"arena"
+],
+"qwen3-32b": [
+1.2,
+"price"
+],
+"qwen3-5-122b-a10b": [
+8.7,
+"price"
+],
+"qwen3-5-27b": [
+10.1,
+"price"
+],
+"qwen3-5-35b-a3b": [
+4.1,
+"price"
+],
+"qwen3-5-397b-a17b": [
+14.2,
+"arena"
+],
+"qwen3-5-9b": [
+3.0,
+"price"
+],
+"qwen3-5-flash-02-23": [
+4.9,
+"price"
+],
+"qwen3-5-plus": [
+21.3,
+"price"
+],
+"qwen3-5-plus-02-15": [
+12.5,
+"arena"
+],
+"qwen3-6-27b": [
+15.7,
+"price"
+],
+"qwen3-6-35b-a3b": [
+6.2,
+"price"
+],
+"qwen3-6-flash": [
+18.3,
+"price"
+],
+"qwen3-6-plus": [
+17.4,
+"arena"
+],
+"qwen3-7-flash": [
+11.4,
+"price"
+],
+"qwen3-7-max": [
+26.1,
+"arena"
+],
+"qwen3-7-plus": [
+23.1,
+"arena"
+],
+"qwen3-8-2-4t-a95b": [
+36.7,
+"price"
+],
+"qwen3-8-27b": [
+20.1,
+"aa"
+],
+"qwen3-8-flash": [
+28.6,
+"aa"
+],
+"qwen3-8-max": [
+33.7,
+"aa"
+],
+"qwen3-8-max-prime": [
+43.7,
+"price"
+],
+"qwen3-8-omni-flash": [
+23.3,
+"price"
+],
+"qwen3-coder": [
+7.4,
+"arena"
+],
+"qwen3-coder-30b-a3b": [
+6.3,
+"arena"
+],
+"qwen3-coder-flash": [
+3.5,
+"price"
+],
+"qwen3-coder-next": [
+3.5,
+"price"
+],
+"qwen3-next-80b-a3b": [
+2.6,
+"price"
+],
+"qwen3-vl-235b-a22b": [
+3.0,
+"price"
+],
+"qwen3-vl-30b-a3b": [
+2.5,
+"price"
+],
+"qwen3-vl-8b": [
+2.6,
+"price"
+],
+"qwen4-max": [
+42.9,
+"aa"
+],
+"reka-edge": [
+1.3,
+"price"
+],
+"reka-flash-3": [
+0.9,
+"price"
+],
+"relace-apply-3": [
+2.8,
+"price"
+],
+"relace-search": [
+5.2,
+"price"
+],
+"remm-slerp-l2-13b": [
+0.1,
+"price"
+],
+"ripple-65b": [
+24.0,
+"price"
+],
+"sakana-namazu": [
+24.6,
+"price"
+],
+"schematron-v2": [
+3.5,
+"price"
+],
+"schematron-v2-small": [
+4.1,
+"price"
+],
+"seed-2-0-lite": [
+9.4,
+"price"
+],
+"seed-2-0-mini": [
+3.2,
+"price"
+],
+"seed-2-1": [
+21.8,
+"price"
+],
+"skyfall-36b-v2": [
+1.0,
+"price"
+],
+"solar-mini4": [
+7.4,
+"arena"
+],
+"solar-pro4": [
+14.2,
+"aa"
+],
+"sonar": [
+1.3,
+"price"
+],
+"sonar-deep-research": [
+2.2,
+"price"
+],
+"sonar-pro": [
+2.7,
+"price"
+],
+"sonar-pro-search": [
+10.8,
+"price"
+],
+"sonar-reasoning-pro": [
+2.2,
+"price"
+],
+"step-3-7-flash": [
+13.6,
+"arena"
+],
+"step-5": [
+28.5,
+"aa"
+],
+"ternary-bonsai-2-27b": [
+14.4,
+"price"
+],
+"ternary-bonsai-2-9b": [
+7.9,
+"price"
+],
+"ui-tars-1-5-7b": [
+1.4,
+"price"
+],
+"unslopnemo-12b": [
+1.4,
+"price"
+],
+"voxtral-small-24b": [
+1.4,
+"price"
+],
+"weaver": [
+0.2,
+"price"
+]
+}
+}

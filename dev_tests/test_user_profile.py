@@ -327,7 +327,8 @@ class TestJumpButtonsRuntime(unittest.TestCase):
             settings_store.save(data)
             panel = settings_panel.SettingsPanel(
                 root, on_minimize=lambda: None, on_close=lambda: None,
-                corner_index=0, initial_content=None, bounds=None)
+                corner_index=0, initial_content=None, bounds=None,
+                initial_page="keys")
             for _ in range(30):
                 root.update(); root.update_idletasks()
             btn_top, btn_bottom = panel._jump_btns["keys"]
@@ -452,8 +453,8 @@ class TestSettingsWiringPins(unittest.TestCase):
     def test_f34_top_segment_switcher_and_panel_fitting_content(self):
         # nav moved to a horizontal customtkinter-segmented top switcher
         self.assertIn("ctk.CTkSegmentedButton(", self.src)
-        self.assertIn('self._page_keys = {"Keys & Connect": "keys", '
-                      '"Profile": "profile"}', self.src)
+        self.assertIn('self._page_keys = {"Profile": "profile", '
+                      '"Keys & Connect": "keys"}', self.src)
         # page flips keep the switcher's active segment honest
         self.assertIn("self._seg.set(self._page_labels[name])", self.src)
         # both scroll pages follow the PANEL width (F36: the user saw

@@ -584,7 +584,7 @@ class SettingsPanel(tk.Toplevel):
         self._selected_ids = set()
         self._sel_vars = {}      # (faculty, entry_id) -> BooleanVar
         self._remove_selected_btn = None
-        self._page_keys = {"Keys & Connect": "keys", "Profile": "profile"}
+        self._page_keys = {"Profile": "profile", "Keys & Connect": "keys"}
         self._page_labels = {v: k for k, v in self._page_keys.items()}
         self._seg = ctk.CTkSegmentedButton(
             split, values=list(self._page_keys), height=32,
@@ -646,10 +646,11 @@ class SettingsPanel(tk.Toplevel):
         self._keys_host = body_host
         self._add_jump_buttons(body_host, self._canvas, "keys")
         self._profile_host = self._build_profile_page(self._content)
-        if initial_page == "profile":
-            self.show_page("profile")
-        else:
+        # Profile is the first page Settings opens on
+        if initial_page == "keys":
             self.show_page("keys")
+        else:
+            self.show_page("profile")
 
         # Wheel/touchpad scrolling comes from touchpad_scroll's global
         # pointer-routed handler (Windows delivers wheel events to the
@@ -771,7 +772,8 @@ class SettingsPanel(tk.Toplevel):
         """Flip the top switcher. Both pages are always built (cheap, keeps
         every row's state while you hop page to page); only the packing
         changes. `initial_page` lets the 'open my profile' voice route
-        land here directly (see app_panels' profile redirect)."""
+        land here directly (see app_panels' profile redirect). Profile is
+        the first tab and the page Settings opens on."""
         self._page = name
         # keep the top switcher's active segment honest even when a page
         # flip came from outside (e.g. the 'open my profile' redirect)
@@ -780,6 +782,7 @@ class SettingsPanel(tk.Toplevel):
             self._check_all_btn.pack(side="right", padx=8, pady=6)
         else:
             self._check_all_btn.pack_forget()
+        self._retitle_subheader(name)
         hosts = {"keys": self._keys_host, "profile": self._profile_host}
         for key, host in hosts.items():
             if key == name:
@@ -787,20 +790,91 @@ class SettingsPanel(tk.Toplevel):
             else:
                 host.pack_forget()
 
+    def _retitle_subheader(self, name):
+        """The one-line hint under the title bar describes the page that is
+        showing (its original text is about API keys, which read oddly
+        above the Profile page now that Profile opens first)."""
+        try:
+            lbl = getattr(self, "_subheader_lbl", None)
+            if lbl is None:
+                # the hint label is the first plain label in the "Check
+                # all" button's row (the scroll probe is the other one)
+                for child in self._check_all_btn.master.winfo_children():
+                    if (isinstance(child, ctk.CTkLabel)
+                            and child is not getattr(self, "_scroll_probe", None)):
+                        lbl = child
+                        break
+                if lbl is None:
+                    return
+                self._subheader_lbl = lbl
+                self._subheader_keys_text = lbl.cget("text")
+            if name == "profile":
+                lbl.configure(text=(
+                    "Your profile \u2014 Friday reads it to know who you "
+                    "are. Passwords and tokens are encrypted and never "
+                    "reach a prompt."))
+            else:
+                lbl.configure(text=self._subheader_keys_text)
+        except Exception:  # noqa: BLE001 -- cosmetic only
+            pass
+
     def _build_profile_page(self, parent):
         """Who the user is: identity, links, photo, bio, connected apps,
         and (encrypted + always-masked) web passwords -- everything the
         user chose to keep here in their own words. Saved blob lands in
-        Friday's encrypted store; Friday reads it into every prompt."""
-        host = ctk.CTkFrame(parent, fg_color=C["editor"], corner_radius=0)
-        canvas = tk.Canvas(host, bg=C["editor"], highlightthickness=0,
-                           bd=0)
+        Friday's encrypted store; Friday reads it into every prompt.
+
+        Layout: a profile header card (large round photo, name, handles,
+        completeness meter) on top, then one rounded card per section,
+        and a Save bar pinned to the bottom so it is always reachable."""
+        bg = C["panel"]          # page background
+        card_bg = C["editor"]    # cards sit one step "up" from the page
+        line = C.get("border_soft", C["border"])
+
+        def _on_accent():
+            """Readable text colour on the accent (light accents get dark
+            text instead of white-on-pale)."""
+            try:
+                r, g, b = (int(C["accent"][i:i + 2], 16) for i in (1, 3, 5))
+                return "#111111" if (0.299 * r + 0.587 * g + 0.114 * b) > 160 \
+                    else "#ffffff"
+            except Exception:  # noqa: BLE001
+                return "#ffffff"
+        on_accent = _on_accent()
+
+        page = ctk.CTkFrame(parent, fg_color=bg, corner_radius=0)
+
+        # -- pinned Save bar (outside the scroll area) --
+        footer = ctk.CTkFrame(page, fg_color=bg, corner_radius=0)
+        footer.pack(side="bottom", fill="x")
+        ctk.CTkFrame(footer, fg_color=line, height=1,
+                     corner_radius=0).pack(side="top", fill="x")
+        save_row = ctk.CTkFrame(footer, fg_color="transparent")
+        save_row.pack(fill="x", padx=18, pady=10)
+        panel_ui.style_button(
+            ctk.CTkButton(save_row, text="Save profile", width=132,
+                          height=34, command=self._save_profile),
+            C, "primary").pack(side="right")
+        save_row.winfo_children()[-1].configure(text_color=on_accent)
+        self._profile_status = ctk.CTkLabel(
+            save_row, text="Changes are kept only after you press Save.",
+            text_color=C["fg_dim"], font=("Segoe UI", 10), anchor="w")
+        self._profile_status.pack(side="left", fill="x", expand=True)
+
+        # -- scroll area --
+        host = ctk.CTkFrame(page, fg_color=bg, corner_radius=0)
+        host.pack(side="top", fill="both", expand=True)
+        canvas = tk.Canvas(host, bg=bg, highlightthickness=0, bd=0)
         canvas.pack(side="left", fill="both", expand=True)
-        body = ctk.CTkFrame(canvas, fg_color=C["editor"], corner_radius=0)
+        body = ctk.CTkFrame(canvas, fg_color=bg, corner_radius=0)
         win = canvas.create_window((0, 0), window=body, anchor="nw")
 
         def _body_conf(_e):
-            canvas.configure(scrollregion=canvas.bbox("all"))
+            # scrollregion anchored at x=0: a region starting at the
+            # centered column's x would scroll the column flush-left
+            box_ = canvas.bbox("all")
+            if box_:
+                canvas.configure(scrollregion=(0, 0, box_[2], box_[3]))
 
         def _canvas_conf(e):
             # Same panel-fitting column as the keys page (F36): nothing
@@ -820,58 +894,185 @@ class SettingsPanel(tk.Toplevel):
         import user_profile
         profile = user_profile.load()
         self._profile_vars = {}
+        self._photo_img = None
 
+        # ---------- small layout helpers ----------
         def _heading(text):
-            ctk.CTkLabel(body, text=text, text_color=C["fg"],
-                         font=("Segoe UI", 12, "bold")).pack(
-                anchor="w", padx=14, pady=(16, 2))
+            """One rounded section card; returns its content frame."""
+            card = ctk.CTkFrame(body, fg_color=card_bg, corner_radius=12,
+                                border_width=1, border_color=line)
+            card.pack(fill="x", padx=14, pady=(12, 0))
+            ctk.CTkLabel(card, text=text, text_color=C["fg"], anchor="w",
+                         font=("Segoe UI", 13, "bold")).pack(
+                fill="x", padx=18, pady=(14, 0))
+            inner = ctk.CTkFrame(card, fg_color="transparent")
+            inner.pack(fill="x", padx=18, pady=(6, 16))
+            return inner
 
-        def _entry(key, label, placeholder="", secret=False):
-            ctk.CTkLabel(body, text=label, text_color=C["fg_dim"],
-                         font=("Segoe UI", 10)).pack(
-                anchor="w", padx=14, pady=(8, 0))
-            ent = _style_entry(ctk.CTkEntry(body, placeholder_text=
-                placeholder, show="•" if secret else ""))
-            ent.pack(fill="x", padx=14, pady=(2, 0), ipady=4)
+        def _note(box, text):
+            """Dim helper text that re-wraps to the card's width."""
+            lbl = ctk.CTkLabel(box, text=text, text_color=C["fg_dim"],
+                               font=("Segoe UI", 10), justify="left",
+                               anchor="w", wraplength=560)
+            lbl.pack(fill="x", pady=(0, 6))
+            box.bind("<Configure>", lambda e: lbl.configure(
+                wraplength=max(200, e.width - 8)), add="+")
+            return lbl
+
+        def _grid2(box):
+            grid = ctk.CTkFrame(box, fg_color="transparent")
+            grid.pack(fill="x")
+            grid.grid_columnconfigure((0, 1), weight=1, uniform="col")
+            return grid
+
+        def _field(grid, row, col, label, placeholder="", secret=False,
+                   span=1):
+            cell = ctk.CTkFrame(grid, fg_color="transparent")
+            cell.grid(row=row, column=col, columnspan=span, sticky="ew",
+                      padx=(0 if col == 0 else 6, 6 if col + span < 2 else 0),
+                      pady=(6, 0))
+            ctk.CTkLabel(cell, text=label, text_color=C["fg_dim"],
+                         anchor="w", font=("Segoe UI", 10, "bold")).pack(
+                fill="x")
+            ent = _style_entry(ctk.CTkEntry(
+                cell, height=34, placeholder_text=placeholder,
+                show="\u2022" if secret else ""))
+            ent.pack(fill="x", pady=(3, 0))
+            return ent
+
+        def _entry(grid, row, col, key, label, placeholder="", span=1):
+            ent = _field(grid, row, col, label, placeholder, span=span)
             if profile.get(key):
                 ent.insert(0, profile[key])
             self._profile_vars[key] = ent
             return ent
 
-        _heading("Who you are")
-        _entry("name", "Real name", "e.g. Ada Lovelace")
-        _entry("dev_names", "Dev names / handles (comma-separated)",
-               "e.g. alovelace, ada-dev")
-        ctk.CTkLabel(body, text="Bio -- describe yourself (this text is "
-                     "what Friday reads to know you)",
-                     text_color=C["fg_dim"], font=("Segoe UI", 10)).pack(
-            anchor="w", padx=14, pady=(8, 0))
-        self._bio_text = tk.Text(
-            body, height=4, bg=C["input"], fg=C["fg"], bd=0,
-            insertbackground=C["caret"], font=("Segoe UI", 10),
-            wrap="word", highlightthickness=1,
-            highlightbackground=C["border"],
-            highlightcolor=C.get("border_hi", C["border"]))
-        self._bio_text.pack(fill="x", padx=14, pady=(2, 0))
-        if profile.get("bio"):
-            self._bio_text.insert("1.0", profile["bio"])
+        # ================= header card: photo + identity =================
+        head = ctk.CTkFrame(body, fg_color=card_bg, corner_radius=14,
+                            border_width=1, border_color=line)
+        head.pack(fill="x", padx=14, pady=(14, 0))
+        try:
+            scale = float(ctk.ScalingTracker.get_widget_scaling(head))
+        except Exception:  # noqa: BLE001
+            scale = 1.0
+        av = int(round(112 * scale))            # avatar canvas size
+        photo_px = int(round(98 * scale))       # photo inside the ring
 
-        _entry("interests", "Interests \u2014 what you care about",
-               placeholder="e.g. AI agents, music production, fintech")
-        _entry("goals", "Goals \u2014 what you're working toward",
-               placeholder="e.g. ship a SaaS, pass finals, learn Rust")
+        top = ctk.CTkFrame(head, fg_color="transparent")
+        top.pack(fill="x", padx=20, pady=(20, 12))
+        self._avatar_canvas = tk.Canvas(top, width=av, height=av,
+                                        bg=card_bg, highlightthickness=0,
+                                        bd=0, cursor="hand2")
+        self._avatar_canvas.pack(side="left", anchor="n")
+        ident = ctk.CTkFrame(top, fg_color="transparent")
+        ident.pack(side="left", fill="both", expand=True, padx=(18, 0))
+        self._hdr_name = ctk.CTkLabel(ident, text="", anchor="w",
+                                      text_color=C["fg"],
+                                      font=("Segoe UI", 20, "bold"))
+        self._hdr_name.pack(fill="x", pady=(6, 0))
+        self._hdr_handles = ctk.CTkLabel(ident, text="", anchor="w",
+                                         text_color=C["accent"],
+                                         font=("Segoe UI", 11))
+        self._hdr_handles.pack(fill="x")
+        self._hdr_meter_lbl = ctk.CTkLabel(ident, text="", anchor="w",
+                                           text_color=C["fg_dim"],
+                                           font=("Segoe UI", 10))
+        self._hdr_meter_lbl.pack(fill="x", pady=(8, 0))
+        self._hdr_meter = ctk.CTkProgressBar(
+            ident, height=6, corner_radius=3, fg_color=C["hover"],
+            progress_color=C["accent"])
+        self._hdr_meter.pack(fill="x", pady=(3, 0))
 
-        _heading("Photo")
-        photo_row = ctk.CTkFrame(body, fg_color="transparent")
-        photo_row.pack(fill="x", padx=14, pady=(4, 0))
+        btns = ctk.CTkFrame(ident, fg_color="transparent")
+        btns.pack(fill="x", pady=(12, 0))
+
+        # photo source: file path or URL (what _save_profile stores)
+        src = ctk.CTkFrame(head, fg_color="transparent")
+        src.pack(fill="x", padx=20, pady=(0, 18))
         self._photo_entry = _style_entry(ctk.CTkEntry(
-            photo_row,
-            placeholder_text="path to an image file, or an https:// URL"))
-        self._photo_entry.pack(side="left", fill="x", expand=True, ipady=4)
+            src, height=32,
+            placeholder_text="\u2026or paste an image path or https:// URL"))
+        self._photo_entry.pack(side="left", fill="x", expand=True)
         if profile.get("photo"):
             self._photo_entry.insert(0, profile["photo"])
 
-        def _browse():
+        def _draw_avatar():
+            cv = self._avatar_canvas
+            cv.delete("all")
+            m = av / 2
+            cv.create_oval(2, 2, av - 2, av - 2, outline=C["accent"],
+                           width=max(2, int(3 * scale)))
+            if self._photo_img is not None:
+                cv.create_image(m, m, image=self._photo_img)
+            else:
+                pad = int(8 * scale)
+                cv.create_oval(pad, pad, av - pad, av - pad,
+                               fill=C["hover"], outline="")
+                words = (self._profile_vars["name"].get().split()
+                         if "name" in self._profile_vars else [])
+                initials = "".join(w[0] for w in words[:2]).upper()
+                cv.create_text(m, m, text=initials or "+",
+                               fill=C["accent"],
+                               font=("Segoe UI", int(-34 * scale), "bold"))
+            # small "edit" badge, bottom-right: the photo is clickable
+            r, cx = 14 * scale, av - 16 * scale
+            cv.create_oval(cx - r, cx - r, cx + r, cx + r,
+                           fill=C["accent"], outline=card_bg,
+                           width=max(2, int(3 * scale)))
+            cv.create_text(cx, cx, text="\u270e", fill=on_accent,
+                           font=("Segoe UI Symbol", int(-14 * scale)))
+
+        def _refresh_header(_e=None):
+            name = self._profile_vars["name"].get().strip()
+            handles = [h.strip().lstrip("@") for h in
+                       self._profile_vars["dev_names"].get().split(",")
+                       if h.strip()]
+            self._hdr_name.configure(text=name or "Your name")
+            self._hdr_name.configure(
+                text_color=C["fg"] if name else C["fg_faint"])
+            self._hdr_handles.configure(
+                text="   ".join("@" + h for h in handles[:4])
+                or "Add your handles below")
+            filled = [
+                bool(name), bool(handles),
+                bool(self._bio_text.get("1.0", "end").strip()),
+                bool(self._profile_vars["interests"].get().strip()),
+                bool(self._profile_vars["goals"].get().strip()),
+                bool(self._photo_entry.get().strip()),
+                any(e.get().strip() for e in self._link_vars.values()),
+            ]
+            done = sum(filled)
+            self._hdr_meter.set(done / len(filled))
+            self._hdr_meter_lbl.configure(
+                text=("Profile complete" if done == len(filled) else
+                      f"Profile {round(100 * done / len(filled))}% "
+                      "complete"))
+            if self._photo_img is None:
+                _draw_avatar()
+
+        self._refresh_profile_header = _refresh_header
+
+        def _preview(_e=None):
+            source = self._photo_entry.get().strip()
+            if not source:
+                self._clear_photo()
+                return
+            img = user_profile.avatar_photoimage(
+                {"photo": source}, size=photo_px, master=self)
+            if img is not None:
+                self._photo_img = img   # keep a reference: GC eats images
+                self._profile_status.configure(
+                    text="Photo updated \u2014 press Save profile to keep it.",
+                    text_color=C["fg_dim"])
+            else:
+                self._photo_img = None
+                self._profile_status.configure(
+                    text="Couldn't load that photo \u2014 check the path "
+                         "or URL.", text_color=C["danger"])
+            _draw_avatar()
+            _refresh_header()
+
+        def _browse(_e=None):
             from tkinter import filedialog
             picked = filedialog.askopenfilename(
                 parent=self, title="Pick your profile photo",
@@ -881,201 +1082,204 @@ class SettingsPanel(tk.Toplevel):
                 self._photo_entry.insert(0, picked)
                 _preview()
 
-        def _preview():
-            img = user_profile.avatar_photoimage(
-                {"photo": self._photo_entry.get().strip()}, size=56,
-                master=self)
-            if img is not None:
-                self._photo_img = img   # keep a reference: GC eats images
-                self._avatar_holder.configure(image=img, text="")
-            else:
-                self._avatar_holder.configure(
-                    image=None, text="(couldn't load that photo \u2014 "
-                    "check the path/URL)")
-
+        self._avatar_canvas.bind("<Button-1>", _browse)
+        self._photo_entry.bind("<Return>", _preview)
         panel_ui.style_button(
-            ctk.CTkButton(photo_row, text="Browse\u2026", width=80,
-                          command=_browse), C, "ghost"
-        ).pack(side="left", padx=(6, 0))
+            ctk.CTkButton(btns, text="Upload photo\u2026", width=120,
+                          height=30, command=_browse), C, "primary"
+        ).pack(side="left")
+        btns.winfo_children()[-1].configure(text_color=on_accent)
         panel_ui.style_button(
-            ctk.CTkButton(photo_row, text="Preview", width=80,
+            ctk.CTkButton(src, text="Preview", width=80, height=32,
                           command=_preview), C, "ghost"
         ).pack(side="left", padx=(6, 0))
         panel_ui.style_button(
-            ctk.CTkButton(photo_row, text="✕", width=30,
+            ctk.CTkButton(btns, text="✕", width=30, height=30,
                           command=self._clear_photo), C, "danger"
         ).pack(side="left", padx=(6, 0))
-        self._photo_img = None
-        self._avatar_holder = ctk.CTkLabel(
-            body, text="(no photo yet)", font=("Segoe UI", 10),
-            text_color=C["fg_dim"])
-        self._avatar_holder.pack(anchor="w", padx=14, pady=(6, 0))
-        img0 = user_profile.avatar_photoimage(profile, size=56,
-                                              master=self)
-        if img0 is not None:
-            self._photo_img = img0
-            self._avatar_holder.configure(image=img0, text="")
+        ctk.CTkLabel(btns, text="Remove photo", text_color=C["fg_faint"],
+                     font=("Segoe UI", 10)).pack(side="left", padx=(6, 0))
 
-        _heading("Links")
+        # ================= About you =================
+        box = _heading("About you")
+        g = _grid2(box)
+        _entry(g, 0, 0, "name", "Real name", "e.g. Ada Lovelace")
+        _entry(g, 0, 1, "dev_names", "Dev names / handles",
+               "comma-separated, e.g. alovelace, ada-dev")
+        bio_cell = ctk.CTkFrame(box, fg_color="transparent")
+        bio_cell.pack(fill="x", pady=(10, 0))
+        ctk.CTkLabel(bio_cell, text="Bio", text_color=C["fg_dim"],
+                     anchor="w", font=("Segoe UI", 10, "bold")).pack(
+            fill="x")
+        ctk.CTkLabel(bio_cell, text="Describe yourself \u2014 this text is "
+                     "what Friday reads to know you.",
+                     text_color=C["fg_faint"], anchor="w",
+                     font=("Segoe UI", 10)).pack(fill="x")
+        self._bio_text = ctk.CTkTextbox(
+            bio_cell, height=110, fg_color=C["input"], text_color=C["fg"],
+            border_width=1, border_color=C["border"], corner_radius=8,
+            font=("Segoe UI", 11), wrap="word")
+        self._bio_text.pack(fill="x", pady=(4, 0))
+        if profile.get("bio"):
+            self._bio_text.insert("1.0", profile["bio"])
+        g2 = _grid2(box)
+        _entry(g2, 0, 0, "interests", "Interests",
+               "e.g. AI agents, music production, fintech")
+        _entry(g2, 0, 1, "goals", "Goals",
+               "e.g. ship a SaaS, pass finals, learn Rust")
+
+        # ================= Links =================
+        box = _heading("Links")
+        g = _grid2(box)
         self._link_vars = {}
-        for key, label in (("website", "Website"),
-                           ("portfolio", "Portfolio"),
-                           ("github", "GitHub"),
-                           ("twitter", "Twitter / X"),
-                           ("linkedin", "LinkedIn"),
-                           ("telegram", "Telegram")):
-            ctk.CTkLabel(body, text=label, text_color=C["fg_dim"],
-                         font=("Segoe UI", 10)).pack(
-                anchor="w", padx=14, pady=(8, 0))
-            ent = _style_entry(
-                ctk.CTkEntry(body, placeholder_text="https://"))
-            ent.pack(fill="x", padx=14, pady=(2, 0), ipady=4)
+        for i, (key, label, hint) in enumerate((
+                ("website", "Website", "https://yoursite.com"),
+                ("portfolio", "Portfolio", "https://"),
+                ("github", "GitHub", "https://github.com/username"),
+                ("twitter", "Twitter / X", "https://x.com/username"),
+                ("linkedin", "LinkedIn", "https://linkedin.com/in/username"),
+                ("telegram", "Telegram", "https://t.me/username"))):
+            ent = _field(g, i // 2, i % 2, label, hint)
             value = (profile.get("links") or {}).get(key, "")
             if value:
                 ent.insert(0, value)
             self._link_vars[key] = ent
 
-        _heading("Emails")
-        ctk.CTkLabel(
-            body,
-            text="Mailboxes Friday can work for you (read / send / "
-                 "sign-ups). Add as many as you have \u2014 when a task "
-                 "needs mail and you've added 2 or more, Friday asks "
-                 "which one to use. Passwords are encrypted, masked, "
-                 "and never reach any prompt. Setup only for now: no "
-                 "mail action happens yet.",
-            text_color=C["fg_dim"], font=("Segoe UI", 10),
-            justify="left", wraplength=560, anchor="w").pack(
-            anchor="w", padx=14, pady=(2, 0), fill="x")
-        self._emails_host = ctk.CTkFrame(body, fg_color="transparent")
-        self._emails_host.pack(fill="x", padx=14, pady=(6, 0))
+        # ================= Emails =================
+        box = _heading("Emails")
+        _note(box, "Mailboxes Friday can work for you (read / send / "
+                   "sign-ups). Add as many as you have \u2014 when a task "
+                   "needs mail and you've added 2 or more, Friday asks "
+                   "which one to use. Passwords are encrypted, masked, "
+                   "and never reach any prompt. Setup only for now: no "
+                   "mail action happens yet.")
+        self._emails_host = ctk.CTkFrame(box, fg_color="transparent",
+                                         height=1)
+        self._emails_host.pack(fill="x", pady=(2, 0))
         self._email_rows = []
         for stored in (profile.get("emails") or []):
             self._email_row(stored=stored)
-        add_e = ctk.CTkFrame(body, fg_color="transparent")
-        add_e.pack(fill="x", padx=14, pady=(8, 0))
+        add_e = ctk.CTkFrame(box, fg_color="transparent")
+        add_e.pack(fill="x", pady=(8, 0))
         self._new_addr = _style_entry(ctk.CTkEntry(
-            add_e, placeholder_text="email address"))
-        self._new_addr.pack(side="left", fill="x", expand=True, ipady=4)
+            add_e, height=34, placeholder_text="email address"))
+        self._new_addr.pack(side="left", fill="x", expand=True)
         self._new_epass = _style_entry(ctk.CTkEntry(
-            add_e, placeholder_text="password", show="•"))
+            add_e, height=34, placeholder_text="password", show="•"))
         self._new_epass.pack(side="left", fill="x", expand=True,
-                             ipady=4, padx=(6, 0))
+                             padx=(6, 0))
         panel_ui.style_button(ctk.CTkButton(
-            add_e, text="+ Add email", width=90,
+            add_e, text="+ Add email", width=100, height=34,
             command=lambda: self._email_row(stored=None)), C
         ).pack(side="left", padx=(8, 0))
 
-        _heading("Connect apps")
-        ctk.CTkLabel(body, text="Apps you use (comma-separated) \u2014 "
-                     "context so Friday knows your toolbox",
-                     text_color=C["fg_dim"], font=("Segoe UI", 10),
-                     wraplength=560, justify="left").pack(
-            anchor="w", padx=14, pady=(4, 0))
+        # ================= Connect apps =================
+        box = _heading("Connect apps")
+        _note(box, "Apps you use (comma-separated) \u2014 context so "
+                   "Friday knows your toolbox.")
         self._apps_entry = _style_entry(ctk.CTkEntry(
-            body,
+            box, height=34,
             placeholder_text="e.g. VS Code, GitHub, Figma, Slack"))
-        self._apps_entry.pack(fill="x", padx=14, pady=(2, 0), ipady=4)
+        self._apps_entry.pack(fill="x")
         if profile.get("connected_apps"):
             self._apps_entry.insert(0, ", ".join(profile["connected_apps"]))
 
-        _heading("GitHub authors")
-        ctk.CTkLabel(
-            body,
-            text="Commit identities for YOUR GitHub accounts (username "
-                 "+ email). A clone carrying one of these usernames "
-                 "commits as that author automatically -- no asking; "
-                 "other repos let you pick. The third field is that "
-                 "account's own ACCESS TOKEN for GitHub actions (masked, "
-                 "never prompted). Friday uses only the selected account's "
-                 "token from this section for commits/pushes/PRs; Web "
-                 "passwords is not a fallback for those actions.",
-            text_color=C["fg_dim"], font=("Segoe UI", 10),
-            justify="left", wraplength=560, anchor="w").pack(
-            anchor="w", padx=14, pady=(2, 0), fill="x")
-        self._gh_host = ctk.CTkFrame(body, fg_color="transparent")
-        self._gh_host.pack(fill="x", padx=14, pady=(6, 0))
+        # ================= GitHub authors =================
+        box = _heading("GitHub authors")
+        _note(box, "Commit identities for YOUR GitHub accounts (username "
+                   "+ email). A clone carrying one of these usernames "
+                   "commits as that author automatically -- no asking; "
+                   "other repos let you pick. The third field is that "
+                   "account's own ACCESS TOKEN for GitHub actions (masked, "
+                   "never prompted). Friday uses only the selected account's "
+                   "token from this section for commits/pushes/PRs; Web "
+                   "passwords is not a fallback for those actions.")
+        self._gh_host = ctk.CTkFrame(box, fg_color="transparent",
+                                     height=1)
+        self._gh_host.pack(fill="x", pady=(2, 0))
         self._gh_rows = []
         for stored in (profile.get("github_authors") or []):
             self._gh_row(stored=stored)
-        add_g = ctk.CTkFrame(body, fg_color="transparent")
-        add_g.pack(fill="x", padx=14, pady=(8, 0))
+        add_g = ctk.CTkFrame(box, fg_color="transparent")
+        add_g.pack(fill="x", pady=(8, 0))
         self._new_gh_user = _style_entry(ctk.CTkEntry(
-            add_g, placeholder_text="github username"))
-        self._new_gh_user.pack(side="left", fill="x", expand=True,
-                               ipady=4)
+            add_g, height=34, placeholder_text="github username"))
+        self._new_gh_user.pack(side="left", fill="x", expand=True)
         self._new_gh_mail = _style_entry(ctk.CTkEntry(
-            add_g, placeholder_text="author email"))
+            add_g, height=34, placeholder_text="author email"))
         self._new_gh_mail.pack(side="left", fill="x", expand=True,
-                               ipady=4, padx=(6, 0))
+                               padx=(6, 0))
         self._new_gh_tok = _style_entry(ctk.CTkEntry(
-            add_g, placeholder_text="token (optional)", show="•"))
+            add_g, height=34, placeholder_text="token (optional)", show="•"))
         self._new_gh_tok.pack(side="left", fill="x", expand=True,
-                              ipady=4, padx=(6, 0))
+                              padx=(6, 0))
         self._token_eye(add_g, self._new_gh_tok).pack(side="left", padx=(4, 0))
         panel_ui.style_button(ctk.CTkButton(
-            add_g, text="+ Add author", width=90,
+            add_g, text="+ Add author", width=100, height=34,
             command=lambda: self._gh_row(stored=None)), C
         ).pack(side="left", padx=(8, 0))
 
-        _heading("Web passwords")
-        ctk.CTkLabel(body, text="Stored encrypted inside Friday's local "
-                     "store and shown only as masks \u2014 Friday never "
-                     "reads them into prompts or speaks them.",
-                     text_color=C["fg_dim"], font=("Segoe UI", 10),
-                     wraplength=560, justify="left").pack(
-            anchor="w", padx=14, pady=(4, 0))
-        self._creds_host = ctk.CTkFrame(body, fg_color="transparent")
-        self._creds_host.pack(fill="x", padx=14, pady=(4, 0))
+        # ================= Web passwords =================
+        box = _heading("Web passwords")
+        _note(box, "Stored encrypted inside Friday's local store and shown "
+                   "only as masks \u2014 Friday never reads them into "
+                   "prompts or speaks them.")
+        self._creds_host = ctk.CTkFrame(box, fg_color="transparent",
+                                        height=1)
+        self._creds_host.pack(fill="x", pady=(2, 0))
         self._cred_rows = []
         for row in profile.get("credentials", []):
             self._cred_row(stored=row)
-
-        add = ctk.CTkFrame(body, fg_color="transparent")
-        add.pack(fill="x", padx=14, pady=(6, 0))
+        add = ctk.CTkFrame(box, fg_color="transparent")
+        add.pack(fill="x", pady=(8, 0))
         self._new_site = _style_entry(
-            ctk.CTkEntry(add, placeholder_text="site url"))
-        self._new_site.pack(side="left", fill="x", expand=True, ipady=4)
+            ctk.CTkEntry(add, height=34, placeholder_text="site url"))
+        self._new_site.pack(side="left", fill="x", expand=True)
         self._new_mail = _style_entry(
-            ctk.CTkEntry(add, placeholder_text="email (optional)"))
+            ctk.CTkEntry(add, height=34, placeholder_text="email (optional)"))
         self._new_mail.pack(side="left", fill="x", expand=True,
-                            ipady=4, padx=(6, 0))
+                            padx=(6, 0))
         self._new_user = _style_entry(
-            ctk.CTkEntry(add, placeholder_text="username"))
+            ctk.CTkEntry(add, height=34, placeholder_text="username"))
         self._new_user.pack(side="left", fill="x", expand=True,
-                            ipady=4, padx=(6, 0))
+                            padx=(6, 0))
         self._new_pass = _style_entry(
-            ctk.CTkEntry(add, placeholder_text="password",
+            ctk.CTkEntry(add, height=34, placeholder_text="password",
                          show="•"))
         self._new_pass.pack(side="left", fill="x", expand=True,
-                            ipady=4, padx=(6, 0))
+                            padx=(6, 0))
         panel_ui.style_button(
-            ctk.CTkButton(add, text="Add", width=70,
+            ctk.CTkButton(add, text="Add", width=70, height=34,
                           command=lambda: self._cred_row(stored=None)),
             C, "ghost").pack(side="left", padx=(6, 0))
 
-        save_row = ctk.CTkFrame(body, fg_color="transparent")
-        save_row.pack(fill="x", padx=14, pady=(16, 12))
-        self._profile_status = ctk.CTkLabel(save_row, text="",
-                                            text_color=C["fg_dim"],
-                                            font=("Segoe UI", 10))
-        self._profile_status.pack(side="left")
-        panel_ui.style_button(
-            ctk.CTkButton(save_row, text="Save profile",
-                          command=self._save_profile),
-            C, "primary").pack(side="right")
-        return host
+        # breathing room above the pinned Save bar
+        ctk.CTkFrame(body, fg_color="transparent", height=16).pack()
+
+        # live header: name / handles / completeness follow the typing
+        for ent in list(self._profile_vars.values()) + \
+                list(self._link_vars.values()) + [self._photo_entry]:
+            ent.bind("<KeyRelease>", _refresh_header, add="+")
+        self._bio_text.bind("<KeyRelease>", _refresh_header, add="+")
+        img0 = user_profile.avatar_photoimage(profile, size=photo_px,
+                                              master=self)
+        if img0 is not None:
+            self._photo_img = img0
+        _draw_avatar()
+        _refresh_header()
+        return page
 
     def _clear_photo(self):
-        """The X next to the photo row: drop the path AND the preview,
-        back to the honest placeholder."""
+        """The X next to the photo: drop the path AND the picture, back to
+        the initials placeholder."""
         self._photo_entry.delete(0, "end")
         self._photo_img = None
-        try:
-            self._avatar_holder.configure(
-                image=None, text="(no photo yet)")
-        except tk.TclError:
-            pass
+        refresh = getattr(self, "_refresh_profile_header", None)
+        if refresh is not None:
+            try:
+                refresh()
+            except tk.TclError:
+                pass
 
     def _email_row(self, stored):
         """One mailbox row (F40 multi-email): {address, password}.
@@ -1773,9 +1977,26 @@ class SettingsPanel(tk.Toplevel):
     def _finish_check(self, faculty, model_id, ok, detail):
         if self._closing:
             return
-        settings_store.update_check_result(self._data, faculty, model_id, ok, detail,
-                                            time.time())
-        self._apply_status(faculty, model_id, "connected" if ok else "error", detail)
+        if ok is None:
+            # TEMPORARY problem (rate limit, provider outage, timeout): we
+            # learned nothing new, so the row keeps its previous status
+            # instead of a working model flipping to "Not connected" (and
+            # becoming a target for "Remove not connected").
+            entry = next((e for e in self._data.get(faculty, [])
+                          if e.get("id") == model_id), None)
+            previous = (entry or {}).get("status")
+            if previous not in ("connected", "error"):
+                previous = "unknown"
+            if entry is not None:
+                entry["detail"] = detail
+                entry["last_attempt"] = time.time()
+                settings_store.save(self._data)
+            self._apply_status(faculty, model_id, previous, detail)
+        else:
+            settings_store.update_check_result(self._data, faculty, model_id, ok,
+                                                detail, time.time())
+            self._apply_status(faculty, model_id, "connected" if ok else "error",
+                               detail)
         self._update_connection_summary()
         widgets = self._row_widgets.get((faculty, model_id))
         if widgets:
@@ -1785,11 +2006,62 @@ class SettingsPanel(tk.Toplevel):
                 pass
 
     def _check_all(self):
-        for faculty, entries in self._data.items():
-            for entry in entries:
-                if entry.get("api_key") or entry.get("base_url") or \
-                        entry.get("check_kind", "").startswith("local"):
-                    self._run_check(faculty, entry)
+        """Token-free where possible (see settings_checks.check_many): one
+        catalog lookup per provider key instead of a generation per model,
+        paced per provider, temporary failures keep the old status. A
+        second click while a run is in progress is ignored."""
+        if getattr(self, "_check_all_running", False) or self._closing:
+            return
+        items = [(faculty, entry) for faculty, entries in self._data.items()
+                 for entry in entries
+                 if entry.get("api_key") or entry.get("base_url")
+                 or entry.get("check_kind", "").startswith("local")]
+        if not items:
+            return
+        self._check_all_running = True
+        try:
+            self._check_all_btn.configure(state="disabled", text="Checking\u2026")
+        except (tk.TclError, AttributeError):
+            pass
+        for faculty, entry in items:
+            self._apply_status(faculty, entry["id"], "checking", "")
+            widgets = self._row_widgets.get((faculty, entry["id"]))
+            if widgets:
+                try:
+                    widgets["check_btn"].configure(state="disabled")
+                except tk.TclError:
+                    pass
+
+        def _post(faculty, entry_id, ok, detail):
+            if self._closing:
+                return
+            try:
+                self.after(0, lambda: self._finish_check(faculty, entry_id, ok, detail))
+            except (tk.TclError, RuntimeError):
+                pass
+
+        def _worker():
+            try:
+                settings_checks.check_many(
+                    [(faculty, dict(entry)) for faculty, entry in items], _post,
+                    should_stop=lambda: self._closing)
+            finally:
+                try:
+                    self.after(0, self._check_all_finished)
+                except (tk.TclError, RuntimeError):
+                    pass
+
+        threading.Thread(target=_worker, name="FridaySettingsCheckAll",
+                         daemon=True).start()
+
+    def _check_all_finished(self):
+        self._check_all_running = False
+        if self._closing:
+            return
+        try:
+            self._check_all_btn.configure(state="normal", text="Check all")
+        except (tk.TclError, AttributeError):
+            pass
 
     # ---------------------------------------------------------------
     # Panel-manager protocol: same methods/semantics as

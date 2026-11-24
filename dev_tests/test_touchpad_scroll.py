@@ -454,6 +454,8 @@ assert "Opened Settings" in msg, msg
 time.sleep(0.7)
 gui = mgr._bridge.call
 panel = gui(lambda: mgr._panels["settings"]["frame"])
+gui(lambda: panel.show_page("keys"))   # Settings opens on Profile now
+time.sleep(0.5)
 canvas = gui(lambda: panel._canvas)
 y0 = gui(lambda: canvas.yview()[0])
 def fire():

@@ -141,7 +141,7 @@ check("F12: every probe-viable README provider has a preset",
       all(any(p["slug"] == s for p in pa.COMMON_PROVIDERS)
           for s in _F12_NEW_SLUGS))
 check("F12: the quick-pick grew to the README's 46-entry catalog",
-      len(pa.COMMON_PROVIDERS) == 46)
+      len(pa.COMMON_PROVIDERS) == 47)
 check("F12: zukijourney stays OUT (Discord-gated key + Cloudflare "
       "bot-wall blocks even a catalog probe -- no dead buttons)",
       not any("zuki" in p["slug"] for p in pa.COMMON_PROVIDERS))

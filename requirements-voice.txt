@@ -1,0 +1,19 @@
+# Optional voice packages. Friday runs without any of them: speech falls back
+# to the built-in OS voice, and voice input to the online recognizer.
+# Install them one at a time so one failure doesn't block the others:
+#   Windows (PowerShell):
+#     Get-Content requirements-voice.txt | Where-Object { $_ -and $_ -notmatch '^#' } | ForEach-Object { python -m pip install $_ }
+#   macOS/Linux:
+#     grep -v '^#' requirements-voice.txt | xargs -n1 python3 -m pip install
+# (RUN_FRIDAY.bat already does this for you.)
+#
+# Built-in OS voice (Windows SAPI5) -- the fallback speech engine.
+pyttsx3>=2.90
+# Microphone input.
+SpeechRecognition>=3.10.0
+PyAudio>=0.2.14; python_version < '3.13'
+PyAudioWPatch>=0.2.12.7; python_version >= '3.13'
+# Offline neural voice and offline speech-to-text. These need onnxruntime /
+# ctranslate2, which can lag behind brand-new Python releases.
+piper-tts>=1.8.0
+faster-whisper>=1.0.0

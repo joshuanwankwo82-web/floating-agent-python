@@ -1,0 +1,770 @@
+diff --git a/dev_tests/test_act_script.py b/dev_tests/test_act_script.py
+index 06b68ea..7879757 100644
+--- a/dev_tests/test_act_script.py
++++ b/dev_tests/test_act_script.py
+@@ -1407,11 +1407,12 @@ def main():
+              "api_key": "sk-ant-fake", "model": "claude-fake-1"})
+         act_script._dispatch_generic_http(
+             ant_entry, "SYS", "USR", "claude-fake-1")
+-        check("CHECK and BUILD send the IDENTICAL max_tokens on "
+-              "anthropic entries (parity, not a repeat of the blind "
+-              "spot)",
+-              [p["max_tokens"] for p in saved_payloads[-2:]].count(
+-                  _pa.ANTHROPIC_MAX_TOKENS_DEFAULT) == 2)
++        check("the settings CHECK is capped (it must not reserve/spend a "
++              "build-sized budget per click) while the BUILD keeps the "
++              "shared max_tokens constant",
++              saved_payloads[-2]["max_tokens"] == _sc.CHECK_PING_MAX_TOKENS
++              and saved_payloads[-1]["max_tokens"]
++              == _pa.ANTHROPIC_MAX_TOKENS_DEFAULT)
+     finally:
+         _rq2.post = orig_post2
+ 
+diff --git a/dev_tests/test_settings_check_cost.py b/dev_tests/test_settings_check_cost.py
+new file mode 100644
+index 0000000..79b1045
+--- /dev/null
++++ b/dev_tests/test_settings_check_cost.py
+@@ -0,0 +1,176 @@
++"""Regression: "Check all" drained tokens and flipped models between
++Connected and Not connected on every re-check.
++
++A fake OpenRouter-style gateway reproduces the real mechanics:
++  * credit-gated: a chat call with NO max_tokens reserves the model's full
++    max output against the balance and answers 402 when it can't cover it;
++  * every generation spends credit;
++  * a burst of chat calls on one key gets 429; the catalog is free.
++The old check (uncapped ping per model, 4 at a time) spent credit on every
++click and turned pricier models red as the balance fell. The new one must:
++spend nothing for catalogued models, give identical results run after run,
++keep previous status on temporary errors, and send one catalog GET per key.
++"""
++import json
++import os
++import sys
++import threading
++import time
++from http.server import BaseHTTPRequestHandler, HTTPServer
++
++sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++
++import settings_checks as sc  # noqa: E402
++
++CHECKS = []
++
++
++def check(label, cond):
++    CHECKS.append((label, bool(cond)))
++    print(("PASS" if cond else "FAIL") + " - " + label)
++
++
++PRICE_PER_TOKEN = {"cheap/model-a": 0.000001, "mid/model-b": 0.00001,
++                   "pricey/model-c": 0.0001, "free/model-d:free": 0.0}
++MAX_OUTPUT = 32000            # what an uncapped request reserves
++
++
++class Gateway(BaseHTTPRequestHandler):
++    balance = 1.0
++    catalog_gets = 0
++    chat_posts = []
++    recent_chat = []
++    fail_catalog_with = None
++
++    def log_message(self, *a):
++        pass
++
++    def _send(self, code, obj):
++        body = json.dumps(obj).encode()
++        self.send_response(code)
++        self.send_header("Content-Type", "application/json")
++        self.send_header("Content-Length", str(len(body)))
++        self.end_headers()
++        self.wfile.write(body)
++
++    def do_GET(self):
++        if self.headers.get("Authorization") != "Bearer good-key":
++            return self._send(401, {"error": {"message": "bad key"}})
++        if self.path.endswith("/models"):
++            Gateway.catalog_gets += 1
++            if Gateway.fail_catalog_with:
++                return self._send(Gateway.fail_catalog_with, {"error": {"message": "busy"}})
++            return self._send(200, {"data": [{"id": m} for m in PRICE_PER_TOKEN]})
++        if self.path.endswith("/key"):
++            return self._send(200, {"data": {"limit_remaining": Gateway.balance,
++                                             "free_model_daily_requests": {"remaining": 42}}})
++        self._send(404, {})
++
++    def do_POST(self):
++        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
++        Gateway.chat_posts.append(body)
++        now = time.time()
++        Gateway.recent_chat = [t for t in Gateway.recent_chat if now - t < 0.5] + [now]
++        if len(Gateway.recent_chat) > 2:
++            return self._send(429, {"error": {"message": "slow down"}})
++        model = body["model"]
++        if model not in PRICE_PER_TOKEN:
++            return self._send(404, {"error": {"message": "no such model"}})
++        cap = body.get("max_tokens") or body.get("max_completion_tokens") or MAX_OUTPUT
++        if cap * PRICE_PER_TOKEN[model] > Gateway.balance:
++            return self._send(402, {"error": {"message": "insufficient credits"}})
++        spent_tokens = min(cap, 600)   # reasoning model "thinks" a lot on a ping
++        Gateway.balance -= spent_tokens * PRICE_PER_TOKEN[model]
++        self._send(200, {"choices": [{"message": {"content": "OK"}}]})
++
++
++srv = HTTPServer(("127.0.0.1", 0), Gateway)
++threading.Thread(target=srv.serve_forever, daemon=True).start()
++BASE = f"http://127.0.0.1:{srv.server_address[1]}/api/v1"
++sc.OPENROUTER_HOSTS.append(f"127.0.0.1:{srv.server_address[1]}")   # fake gateway speaks /key
++
++
++def entry(i, model, key="good-key"):
++    return {"id": f"e{i}", "name": f"OR - {model}", "model": model, "api_key": key,
++            "base_url": BASE, "check_kind": "generic_http"}
++
++
++def run_all(items):
++    results = {}
++    sc.check_many(items, lambda f, eid, ok, d: results.__setitem__(eid, (ok, d)), spacing=0.6)
++    return results
++
++
++models = list(PRICE_PER_TOKEN) + ["retired/model-x"]          # x is NOT in the catalog
++items = [("Thinking", entry(i, m)) for i, m in enumerate(models)]
++items.append(("Voice", entry(99, "mid/model-b")))              # same model in a 2nd faculty
++
++# ---- run 1
++start_balance = Gateway.balance
++r1 = run_all(items)
++spent_run1 = start_balance - Gateway.balance
++check("every entry gets exactly one result", set(r1) == {e["id"] for _, e in items})
++check("catalogued models are green WITHOUT any generation",
++      all(r1[f"e{i}"][0] is True for i in range(4))
++      and not any(p["model"] in PRICE_PER_TOKEN for p in Gateway.chat_posts))
++check("one catalog GET for the whole key (not one call per model)", Gateway.catalog_gets == 1)
++check("a model missing from the catalog falls back to ONE capped ping and is red (404)",
++      r1["e4"][0] is False and len(Gateway.chat_posts) == 1
++      and Gateway.chat_posts[0].get("max_tokens") == sc.CHECK_PING_MAX_TOKENS)
++check("the duplicate model in another faculty shares the result",
++      r1["e99"][0] is True)
++check("a check-all spends no credit on catalogued models", spent_run1 == 0)
++check("free models report the free requests left today",
++      "42 free requests" in r1["e3"][1])
++
++# ---- user removes the not-connected one, runs check all again (twice)
++items2 = [(f, e) for f, e in items if r1[e["id"]][0] is not False]
++r2 = run_all(items2)
++r3 = run_all(items2)
++check("re-checking gives the SAME result every time (no flip-flop)",
++      {k: v[0] for k, v in r2.items()} == {k: v[0] for k, v in r3.items()}
++      == {k: r1[k][0] for k in r2})
++check("re-checking spends nothing", Gateway.balance == start_balance)
++
++# ---- temporary provider trouble keeps status (ok=None), not red
++Gateway.fail_catalog_with = 503
++r4 = run_all(items2)
++Gateway.fail_catalog_with = None
++check("a provider outage is reported as temporary (ok=None) for every entry",
++      all(v[0] is None for v in r4.values()))
++
++# ---- bad key is still a definite red
++r5 = run_all([("Thinking", entry(7, "cheap/model-a", key="wrong"))])
++check("a rejected key is still a definite red", r5["e7"][0] is False and "401" in r5["e7"][1])
++
++# ---- single-row Check: capped real ping, and paid model with no credit is red
++posts_before = len(Gateway.chat_posts)
++time.sleep(0.6)
++ok, detail = sc.check_generic_http(entry(8, "cheap/model-a"))
++check("single-row Check generates with a capped request",
++      ok is True and Gateway.chat_posts[posts_before].get("max_tokens") == sc.CHECK_PING_MAX_TOKENS)
++check("...and costs only the capped amount",
++      start_balance - Gateway.balance <= sc.CHECK_PING_MAX_TOKENS * PRICE_PER_TOKEN["cheap/model-a"] + 1e-12)
++
++Gateway.balance = 0.0
++r6 = run_all([("Thinking", entry(9, "pricey/model-c")), ("Thinking", entry(10, "free/model-d:free"))])
++check("with no credit left, paid models are red (they'd fail with 402) ...",
++      r6["e9"][0] is False and "402" in r6["e9"][1])
++check("... while free models stay green", r6["e10"][0] is True)
++
++# ---- the OLD behaviour, for the record: an uncapped ping per click
++Gateway.balance = 1.0
++time.sleep(0.6)
++import requests  # noqa: E402
++codes = []
++for m in ("cheap/model-a", "mid/model-b", "pricey/model-c"):
++    time.sleep(0.6)
++    codes.append(requests.post(BASE + "/chat/completions",
++                               json={"model": m, "messages": [{"role": "user", "content": "ping"}]}).status_code)
++check("(reproduction) an UNCAPPED ping is refused 402 on the pricier models even with "
++      "credit left -- the old check's 'disconnects'", codes[2] == 402)
++
++srv.shutdown()
++n_fail = sum(1 for _, ok in CHECKS if not ok)
++print(f"\n{len(CHECKS) - n_fail}/{len(CHECKS)} checks passed")
++sys.exit(1 if n_fail else 0)
+diff --git a/dev_tests/test_settings_panel.py b/dev_tests/test_settings_panel.py
+index 46b5028..379ecdf 100644
+--- a/dev_tests/test_settings_panel.py
++++ b/dev_tests/test_settings_panel.py
+@@ -459,11 +459,10 @@ def part_b():
+           "(real generation bytes)",
+           url == "https://api.fakeprovider.com/chat/completions"
+           and ok is True and "can chat" in detail)
+-    check("the check sends the SAME shape a build sends (no max_tokens "
+-          "squeeze -- a 1-token ping can slip past OpenRouter-style "
+-          "credit gates that block every real build call)",
++    check("the check ping is CAPPED (an uncapped ping burned a full reply "
++          "per click and made credit-gated gateways flip models to 402)",
+           posts and posts[0][1].get("model") == "fake-model-1"
+-          and "max_tokens" not in posts[0][1])
++          and posts[0][1].get("max_tokens") == sc.CHECK_PING_MAX_TOKENS)
+     (ok, detail), _u = with_post_code(200, text='{"not json at all": }')
+     check("the check passes on a 2xx (body content isn't inspected -- "
+           "the runtime owns shape validation)", ok is True)
+@@ -483,17 +482,18 @@ def part_b():
+           ok is False and "Key rejected" in detail)
+ 
+     (ok, detail), url = with_post_code(429)
+-    check("HTTP 429 (working key, currently throttled) is green-with-a-"
+-          "note, the truthful middle ground",
+-          ok is True and "rate-limited" in detail.lower())
++    check("HTTP 429 (working key, currently throttled) is TEMPORARY: "
++          "ok=None so the panel keeps the previous status",
++          ok is None and "rate-limited" in detail.lower())
+ 
+     (ok, detail), url = with_post_code(404)
+     check("HTTP 404 names the model/endpoint problem plainly",
+           ok is False and "404" in detail)
+ 
+     (ok, detail), url = with_post_code(503)
+-    check("any 5xx is an honest server-error red-x",
+-          ok is False and "Server error" in detail)
++    check("any 5xx is TEMPORARY (provider outage), never a red-x that "
++          "'Remove not connected' would delete",
++          ok is None and "temporarily unavailable" in detail)
+ 
+     def _raise_conn_error(*a, **k):
+         raise _requests.exceptions.ConnectionError("no route to host")
+@@ -646,6 +646,22 @@ def part_c():
+               panel._connection_counts_lbl.cget("text")
+               == "Connected: 1  |  Not connected: 1  |  Not checked: 5")
+ 
++        # A TEMPORARY result (ok=None: rate limit / outage) must not flip a
++        # working model to "Not connected" -- the cause of models
++        # "disconnecting" on a re-check and then being bulk-removed.
++        panel._finish_check("Thinking", t1["id"], None,
++                            "Rate-limited right now (HTTP 429)")
++        widgets = panel._row_widgets[("Thinking", t1["id"])]
++        check("a temporary check result keeps a Connected model Connected",
++              "Connected" in widgets["status_lbl"].cget("text")
++              and "Not connected" not in widgets["status_lbl"].cget("text"))
++        check("...and the totals are unchanged",
++              panel._connection_counts_lbl.cget("text")
++              == "Connected: 1  |  Not connected: 1  |  Not checked: 5")
++        check("...and the reason is kept on the entry for the user to read",
++              next(e for e in panel._data["Thinking"] if e["id"] == t1["id"])
++              ["detail"].startswith("Rate-limited"))
++
+         ask_prompts = []
+         original_askyesno = sp.messagebox.askyesno
+         sp.messagebox.askyesno = lambda *args, **kwargs: (
+diff --git a/settings_checks.py b/settings_checks.py
+index 0205ea8..b9041c1 100644
+--- a/settings_checks.py
++++ b/settings_checks.py
+@@ -18,8 +18,9 @@ entries) the check now performs a REAL MINIMAL GENERATION -- a 1-token
+ "this entry can answer", not merely "this key authenticates". A bare
+ model-listing check showed "Connected" for an account that was out of
+ balance: its key was valid for listing, and every real build call
+-against it failed with 402. The token this burns per click is fractions
+-of a cent and it buys the truth. Checks that carry a different, still
++against it failed with 402. The ping is CAPPED (see SPEND-SAFE CHECKING
++below) and "Check all" verifies through free catalog/account lookups,
++so checking no longer drains the balance it is trying to verify. Checks that carry a different, still
+ honest claim say so in their own wording: embed checkers do a real
+ 1-item embed; image checkers verify credentials/balance/endpoint
+ without rendering (rendering costs real credits -- read each one's
+@@ -32,6 +33,42 @@ background thread, never directly on the Tk main thread -- see
+ settings_panel.py's `_run_check` for the threading/callback wiring.
+ """
+ import os
++import re
++import threading
++import time
++from concurrent.futures import ThreadPoolExecutor
++
++# -------------------------------------------------------------------------
++# SPEND-SAFE CHECKING (fixes "Check all drains my tokens and flips models
++# between Connected / Not connected"):
++#
++# 1. The single-row ping is CAPPED (CHECK_PING_MAX_TOKENS). The old ping
++#    sent NO max_tokens (8192 on Anthropic) so every click could generate a
++#    full reply -- reasoning models think for hundreds of tokens -- and
++#    credit-gated gateways (OpenRouter style) reserved each model's FULL
++#    max output against the balance, so as the checks themselves spent the
++#    balance, the pricier models started answering 402 -> red.
++# 2. "Check all" spends NO tokens: one free GET of the provider's model
++#    catalog per (base URL, key) proves the key and that each model is
++#    offered; OpenRouter's free /key endpoint reports remaining credit.
++#    Only a model the catalog can't vouch for gets a capped ping.
++# 3. Requests per provider are paced (sequential within a key, a short gap
++#    between pings) instead of a burst that trips free-tier rate limits.
++# 4. TEMPORARY failures (429, 5xx, timeouts, connection drops) return
++#    ok=None == "couldn't tell right now": the panel keeps the model's
++#    previous status instead of turning a working model red (and "Remove
++#    not connected" can no longer delete it).
++# -------------------------------------------------------------------------
++CHECK_PING_MAX_TOKENS = 16          # enough for "OK" on every provider's minimum
++CHECK_PING_PROMPT = "Reply with the single word OK."
++CHECK_ALL_PARALLEL_PROVIDERS = 4    # different providers checked side by side
++CHECK_ALL_PING_SPACING_S = 1.2      # gap between pings on the SAME key
++TRANSIENT_HTTP = {408, 409, 425, 429, 500, 502, 503, 504, 520, 521, 522,
++                  523, 524, 529}
++_TRANSIENT_TEXT = re.compile(
++    r"\b(429|500|502|503|504|529)\b|rate.?limit|too many requests|timed? ?out|"
++    r"timeout|temporar|overloaded|unavailable|try again|connection (reset|"
++    r"aborted|refused)|max retries", re.IGNORECASE)
+ 
+ 
+ def check_gemini(entry):
+@@ -333,17 +370,16 @@ def check_generic_http(entry):
+     through the panel's "+ Add Model" button), in THAT ENTRY'S OWN
+     provider dialect (OpenAI-compatible or Anthropic -- see
+     provider_autodetect). When a model name is stored, the check POSTS
+-    one real ping WITH THE SAME REQUEST SHAPE THE BUILD PIPELINE SENDS
+-    (URL, headers, and body all come from provider_autodetect's shared
+-    builders -- no max_tokens squeeze on OpenAI-style entries, the
+-    shared default on Anthropic ones, where max_tokens is mandatory) so
+-    the green check means THIS ENTRY CAN BUILD, not merely that some
+-    tiny call slipped past a credit gate. The old GET-only check said
+-    "Connected" for an entry whose real builds all failed (a dashboard-
+-    page URL answered the GET; an out-of-balance key answered the GET
+-    too); both misleadings are gone. With NO model name stored the
+-    honest reachability claim is kept and labelled as exactly that --
+-    generation explicitly NOT verified."""
++    one CAPPED ping (CHECK_PING_MAX_TOKENS) to the same URL with the same
++    headers the build pipeline uses, so green still means "this model
++    really generated", at a cost of a few dozen tokens instead of a full
++    reply. Credit is checked through the provider's free account
++    endpoint where one exists (OpenRouter /key) rather than by making a
++    max-size reservation. Temporary failures (429, 5xx, timeouts,
++    dropped connections) return ok=None so the panel keeps the previous
++    status. With NO model name stored the honest reachability claim is
++    kept and labelled as exactly that -- generation explicitly NOT
++    verified."""
+     base_url = (entry.get("base_url") or "").strip()
+     if not base_url:
+         return False, "No API base URL configured to check."
+@@ -370,29 +406,60 @@ def check_generic_http(entry):
+         except Exception as exc:  # noqa: BLE001
+             return False, _short(exc)
+ 
+-    # URL and payload come from the SAME builders act_script's runtime
+-    # dispatch uses -- the parity that ended green-at-check/red-at-build:
+-    # act_script._dispatch_generic_http sends NO max_tokens at all on
+-    # OpenAI-style entries (build answers need open-ended generations),
+-    # and credit-gated providers (OpenRouter style) pre-flight
+-    # affordability against the requested reservation, so max_tokens=1
+-    # used to slip past empty balances and show green while every real
+-    # build call failed with 402 on the very same key. Anthropic
+-    # REQUIRES max_tokens, so both paths use provider_autodetect's
+-    # shared default constant there instead. The ping still only
+-    # GENERATES a word or two, either way.
++    # URL/headers come from the SAME builders act_script's runtime uses
++    # (dialect parity). The body is a CAPPED ping -- see SPEND-SAFE
++    # CHECKING at the top: an uncapped ping burned real tokens on every
++    # click and made credit-gated gateways flip models to 402.
+     url = provider_autodetect.chat_url(base_url, style)
+-    payload = provider_autodetect.chat_payload(style, model, "", "ping")
++    payload = provider_autodetect.chat_payload(
++        style, model, "", CHECK_PING_PROMPT, max_tokens=CHECK_PING_MAX_TOKENS)
+     try:
+-        resp = requests.post(url, headers=headers, json=payload, timeout=15)
++        resp = requests.post(url, headers=headers, json=payload, timeout=20)
++        if (resp.status_code == 400 and style != provider_autodetect.ANTHROPIC_API_STYLE
++                and "max_tokens" in (resp.text or "")):
++            # Newer OpenAI-family models refuse `max_tokens` and want
++            # `max_completion_tokens`; keep the cap, just rename it.
++            payload.pop("max_tokens", None)
++            payload["max_completion_tokens"] = CHECK_PING_MAX_TOKENS
++            resp = requests.post(url, headers=headers, json=payload, timeout=20)
++    except requests.exceptions.Timeout:
++        return None, ("The provider didn't answer within 20 s -- probably busy. "
++                      "Status left unchanged; try again in a minute.")
++    except requests.exceptions.ConnectionError as exc:
++        return None, (f"Couldn't reach {base_url} right now ({_short(exc)}). "
++                      "Status left unchanged -- check your internet or the base URL.")
+     except Exception as exc:  # noqa: BLE001
+         return False, _short(exc)
+     code = resp.status_code
+     if 200 <= code < 300:
+-        return True, f"Generated a reply with {model} -- this entry can chat."
+-    if code == 401 or code == 403:
+-        return False, (f"Key rejected (HTTP {code}) -- generate a fresh API "
++        detail = f"Generated a reply with {model} -- this entry can chat."
++        info = openrouter_key_info(base_url, entry.get("api_key", ""))
++        verdict = _credit_verdict(info, model)
++        if verdict is not None and verdict[0] is False:
++            return verdict
++        if verdict is not None:
++            detail += " " + verdict[1]
++        return True, detail
++    return _classify_http_failure(code, model, resp)
++
++
++def _body_hint(resp):
++    try:
++        return (resp.text or "").strip().replace("\n", " ")[:120]
++    except Exception:  # noqa: BLE001
++        return ""
++
++
++def _classify_http_failure(code, model, resp=None):
++    """Non-2xx -> (ok, detail). ok=None means TEMPORARY: keep the old status."""
++    if code == 401:
++        return False, ("Key rejected (HTTP 401) -- generate a fresh API "
+                        "key and update this entry.")
++    if code == 403:
++        hint = _body_hint(resp) if resp is not None else ""
++        return False, ("Access refused (HTTP 403) -- the key is invalid, or a "
++                       "spend/budget limit on it is used up"
++                       + (f": {hint}" if hint else "."))
+     if code == 402:
+         return False, ("No usable balance on this account (HTTP 402) -- "
+                        "top up at the provider's billing page, or swap "
+@@ -407,20 +474,200 @@ def check_generic_http(entry):
+                        "the URL field, for example "
+                        "https://api.deepseek.com for DeepSeek.")
+     if code == 429:
+-        # Rate-limited NOW but clearly a working, recognised key.
+-        return True, (f"Key authenticates and {model} is recognised -- "
+-                      "currently rate-limited (HTTP 429); generation will "
+-                      "work once the limit window resets.")
+-    body_hint = ""
++        return None, (f"Rate-limited right now (HTTP 429) -- the key works but "
++                      f"the provider is throttling requests. Status left "
++                      "unchanged; it clears when the limit window resets.")
++    if code in TRANSIENT_HTTP or code >= 500:
++        hint = _body_hint(resp) if resp is not None else ""
++        return None, (f"Provider temporarily unavailable (HTTP {code}) -- "
++                      "status left unchanged, try again shortly."
++                      + (f" Server said: {hint}" if hint else ""))
++    hint = _body_hint(resp) if resp is not None else ""
++    return False, (f"Rejected (HTTP {code})"
++                   + (f" -- server says: {hint}" if hint else ""))
++
++
++# -------------------------------------------------------------------------
++# Free account lookups (no generation, no tokens)
++# -------------------------------------------------------------------------
++OPENROUTER_HOSTS = ["openrouter.ai"]   # hosts that serve OpenRouter's /key endpoint
++
++
++def openrouter_key_info(base_url, api_key):
++    """OpenRouter's free GET /api/v1/key: remaining credit on this key and
++    free-model requests left today. None for other providers or on error."""
++    if not api_key or not any(h in (base_url or "").lower() for h in OPENROUTER_HOSTS):
++        return None
+     try:
+-        body_hint = (resp.text or "").strip().replace("\n", " ")[:120]
++        import requests
++        resp = requests.get(base_url.rstrip("/") + "/key", timeout=8,
++                            headers={"Authorization": f"Bearer {api_key}"})
++        if resp.status_code != 200:
++            return None
++        data = resp.json().get("data")
++        return data if isinstance(data, dict) else None
+     except Exception:  # noqa: BLE001
+-        pass
+-    if 400 <= code < 500:
+-        return False, (f"Rejected (HTTP {code})"
+-                       + (f" -- server says: {body_hint}" if body_hint else ""))
+-    return False, (f"Server error (HTTP {code})"
+-                   + (f" -- {body_hint}" if body_hint else ""))
++        return None
++
++
++def _is_free_model_id(model):
++    return str(model or "").lower().endswith(":free")
++
++
++def _credit_verdict(info, model):
++    """(ok, note) from OpenRouter key info, or None when nothing to say.
++    ok False only when a PAID model can't run (no credit left / budget spent)."""
++    if not info:
++        return None
++    notes = []
++    free_req = info.get("free_model_daily_requests") or {}
++    remaining = info.get("limit_remaining")
++    budget = info.get("effective_budget") or {}
++    if _is_free_model_id(model):
++        if isinstance(free_req.get("remaining"), (int, float)):
++            notes.append(f"{int(free_req['remaining'])} free requests left today.")
++        return (True, " ".join(notes)) if notes else None
++    if isinstance(remaining, (int, float)) and remaining <= 0:
++        return False, ("This key's credit limit is used up -- paid models will "
++                       "fail with HTTP 402. Top up or raise the key's limit on "
++                       "openrouter.ai, or use a ':free' model.")
++    if isinstance(budget.get("remaining_usd"), (int, float)) and budget["remaining_usd"] <= 0:
++        return False, ("This key's spending budget is used up -- requests will be "
++                       "refused until it resets or is raised on openrouter.ai.")
++    if isinstance(remaining, (int, float)):
++        notes.append(f"${remaining:,.2f} credit left on this key.")
++    return (True, " ".join(notes)) if notes else None
++
++
++# -------------------------------------------------------------------------
++# "Check all": grouped, paced, deduplicated, and token-free where possible
++# -------------------------------------------------------------------------
++def _catalog(entry):
++    """One free GET of the provider's model list.
++    -> ("ok", set_of_ids) | ("rejected", detail) | ("transient", detail) | ("none", detail)"""
++    import requests
++    import provider_autodetect
++    base_url = (entry.get("base_url") or "").strip()
++    style = provider_autodetect.entry_api_style(entry)
++    hint = provider_autodetect.preset_for_base_url(base_url) or {}
++    url = provider_autodetect.models_url(
++        base_url, style, override=hint.get("models_url_override", ""))
++    if not url:
++        return "none", "no model-listing URL for this base"
++    try:
++        resp = requests.get(url, timeout=10, headers=provider_autodetect.headers_for(
++            style, entry.get("api_key", "")))
++    except requests.exceptions.RequestException as exc:
++        return "transient", (f"Couldn't reach {base_url} right now ({_short(exc)}). "
++                             "Status left unchanged.")
++    code = resp.status_code
++    if code in (401, 403):
++        return "rejected", _classify_http_failure(code, "", resp)[1]
++    if code in TRANSIENT_HTTP or code >= 500:
++        return "transient", _classify_http_failure(code, "", resp)[1]
++    if code >= 400:
++        return "none", f"HTTP {code}"
++    try:
++        data = resp.json()
++    except ValueError:
++        return "none", "catalog wasn't JSON"
++    items = (data.get("data") or data.get("models") or []) if isinstance(data, dict) else data
++    ids = set()
++    for item in items or []:
++        mid = (item.get("id") or item.get("name") or item.get("model")) if isinstance(item, dict) else item
++        if mid:
++            ids.add(str(mid).removeprefix("models/").lower())
++    return ("ok", ids) if ids else ("none", "empty catalog")
++
++
++def _check_provider_group(group, on_result, should_stop, spacing):
++    """All entries sharing one (base URL, key): ONE catalog call, one
++    credit lookup, then a capped ping only for models the catalog can't
++    vouch for. Duplicate models are checked once."""
++    first = group[0][1]
++    state, payload = _catalog(first)
++    if state in ("rejected", "transient"):
++        ok = False if state == "rejected" else None
++        for faculty, entry in group:
++            on_result(faculty, entry["id"], ok, payload)
++        return
++    info = openrouter_key_info(first.get("base_url", ""), first.get("api_key", ""))
++    by_model = {}
++    for faculty, entry in group:
++        by_model.setdefault((entry.get("model") or "").strip(), []).append((faculty, entry))
++    pinged = False
++    for model, members in by_model.items():
++        if should_stop():
++            return
++        if state == "ok" and model.lower() in payload:
++            result = (True, f"Key works and the provider offers {model} -- "
++                            "checked without spending any tokens.")
++            verdict = _credit_verdict(info, model)
++            if verdict is not None:
++                result = verdict if verdict[0] is False else (True, result[1] + " " + verdict[1])
++        else:
++            if pinged and spacing:
++                time.sleep(spacing)
++            result = run_check(dict(members[0][1]))
++            pinged = True
++        for faculty, entry in members:
++            on_result(faculty, entry["id"], result[0], result[1])
++
++
++def check_many(items, on_result, should_stop=lambda: False,
++               max_parallel=CHECK_ALL_PARALLEL_PROVIDERS,
++               spacing=CHECK_ALL_PING_SPACING_S):
++    """The "Check all" engine. `items` is [(faculty, entry_dict), ...];
++    on_result(faculty, entry_id, ok, detail) is called once per entry from
++    worker threads (ok may be None = temporary, keep the old status).
++    Blocks until every entry has a result. Never raises."""
++    groups, solo = {}, []
++    for faculty, entry in items:
++        kind = entry.get("check_kind") or "generic_http"
++        if kind == "generic_http" and (entry.get("model") or "").strip() \
++                and (entry.get("base_url") or "").strip():
++            key = ((entry.get("base_url") or "").strip().rstrip("/").lower(),
++                   entry.get("api_key") or "", entry.get("api_style") or "")
++            groups.setdefault(key, []).append((faculty, entry))
++        else:
++            solo.append((faculty, entry))
++    lock = threading.Lock()
++    done = set()
++
++    def _safe_result(faculty, entry_id, ok, detail):
++        with lock:
++            if (faculty, entry_id) in done:
++                return
++            done.add((faculty, entry_id))
++        try:
++            on_result(faculty, entry_id, ok, detail)
++        except Exception:  # noqa: BLE001
++            pass
++
++    def _run_group(group):
++        try:
++            _check_provider_group(group, _safe_result, should_stop, spacing)
++        except Exception as exc:  # noqa: BLE001
++            for faculty, entry in group:
++                _safe_result(faculty, entry["id"], None,
++                             f"Check failed unexpectedly: {_short(exc)}")
++
++    def _run_solo(pair):
++        faculty, entry = pair
++        if should_stop():
++            return
++        ok, detail = run_check(dict(entry))
++        _safe_result(faculty, entry["id"], ok, detail)
++
++    with ThreadPoolExecutor(max_workers=max(1, max_parallel),
++                            thread_name_prefix="FridayCheckAll") as pool:
++        futures = [pool.submit(_run_group, g) for g in groups.values()]
++        futures += [pool.submit(_run_solo, p) for p in solo]
++        for f in futures:
++            try:
++                f.result()
++            except Exception:  # noqa: BLE001
++                pass
+ 
+ 
+ def fetch_model_list(entry, limit=64):
+@@ -542,10 +789,17 @@ CHECKERS = {
+ def run_check(entry):
+     """Dispatches to the right checker for `entry` based on its
+     check_kind, falling back to the generic HTTP reachability check for
+-    anything unrecognized. Never raises."""
++    anything unrecognized. Never raises. Returns (ok, detail) where ok is
++    True / False / None (None = temporary problem, keep previous status)."""
+     kind = entry.get("check_kind") or "generic_http"
+     fn = CHECKERS.get(kind, check_generic_http)
+     try:
+-        return fn(entry)
++        ok, detail = fn(entry)
+     except Exception as exc:  # noqa: BLE001
+-        return False, f"Check failed unexpectedly: {_short(exc)}"
++        ok, detail = False, f"Check failed unexpectedly: {_short(exc)}"
++    # SDK-based checkers (Gemini/Groq/Mistral...) surface throttling and
++    # outages as exception text; those are temporary, not "disconnected".
++    if ok is False and kind != "generic_http" and _TRANSIENT_TEXT.search(detail or ""):
++        return None, (f"{detail} -- looks temporary (rate limit / outage); "
++                      "status left unchanged.")
++    return ok, detail
+diff --git a/settings_panel.py b/settings_panel.py
+index 8f38c45..e446877 100644
+--- a/settings_panel.py
++++ b/settings_panel.py
+@@ -1773,9 +1773,26 @@ class SettingsPanel(tk.Toplevel):
+     def _finish_check(self, faculty, model_id, ok, detail):
+         if self._closing:
+             return
+-        settings_store.update_check_result(self._data, faculty, model_id, ok, detail,
+-                                            time.time())
+-        self._apply_status(faculty, model_id, "connected" if ok else "error", detail)
++        if ok is None:
++            # TEMPORARY problem (rate limit, provider outage, timeout): we
++            # learned nothing new, so the row keeps its previous status
++            # instead of a working model flipping to "Not connected" (and
++            # becoming a target for "Remove not connected").
++            entry = next((e for e in self._data.get(faculty, [])
++                          if e.get("id") == model_id), None)
++            previous = (entry or {}).get("status")
++            if previous not in ("connected", "error"):
++                previous = "unknown"
++            if entry is not None:
++                entry["detail"] = detail
++                entry["last_attempt"] = time.time()
++                settings_store.save(self._data)
++            self._apply_status(faculty, model_id, previous, detail)
++        else:
++            settings_store.update_check_result(self._data, faculty, model_id, ok,
++                                                detail, time.time())
++            self._apply_status(faculty, model_id, "connected" if ok else "error",
++                               detail)
+         self._update_connection_summary()
+         widgets = self._row_widgets.get((faculty, model_id))
+         if widgets:
+@@ -1785,11 +1802,62 @@ class SettingsPanel(tk.Toplevel):
+                 pass
+ 
+     def _check_all(self):
+-        for faculty, entries in self._data.items():
+-            for entry in entries:
+-                if entry.get("api_key") or entry.get("base_url") or \
+-                        entry.get("check_kind", "").startswith("local"):
+-                    self._run_check(faculty, entry)
++        """Token-free where possible (see settings_checks.check_many): one
++        catalog lookup per provider key instead of a generation per model,
++        paced per provider, temporary failures keep the old status. A
++        second click while a run is in progress is ignored."""
++        if getattr(self, "_check_all_running", False) or self._closing:
++            return
++        items = [(faculty, entry) for faculty, entries in self._data.items()
++                 for entry in entries
++                 if entry.get("api_key") or entry.get("base_url")
++                 or entry.get("check_kind", "").startswith("local")]
++        if not items:
++            return
++        self._check_all_running = True
++        try:
++            self._check_all_btn.configure(state="disabled", text="Checking\u2026")
++        except (tk.TclError, AttributeError):
++            pass
++        for faculty, entry in items:
++            self._apply_status(faculty, entry["id"], "checking", "")
++            widgets = self._row_widgets.get((faculty, entry["id"]))
++            if widgets:
++                try:
++                    widgets["check_btn"].configure(state="disabled")
++                except tk.TclError:
++                    pass
++
++        def _post(faculty, entry_id, ok, detail):
++            if self._closing:
++                return
++            try:
++                self.after(0, lambda: self._finish_check(faculty, entry_id, ok, detail))
++            except (tk.TclError, RuntimeError):
++                pass
++
++        def _worker():
++            try:
++                settings_checks.check_many(
++                    [(faculty, dict(entry)) for faculty, entry in items], _post,
++                    should_stop=lambda: self._closing)
++            finally:
++                try:
++                    self.after(0, self._check_all_finished)
++                except (tk.TclError, RuntimeError):
++                    pass
++
++        threading.Thread(target=_worker, name="FridaySettingsCheckAll",
++                         daemon=True).start()
++
++    def _check_all_finished(self):
++        self._check_all_running = False
++        if self._closing:
++            return
++        try:
++            self._check_all_btn.configure(state="normal", text="Check all")
++        except (tk.TclError, AttributeError):
++            pass
+ 
+     # ---------------------------------------------------------------
+     # Panel-manager protocol: same methods/semantics as

@@ -67,6 +67,14 @@ def _slug(slug, name, base_url, model_hint="", api_style=OPENAI_API_STYLE,
 _OPENROUTER = _slug("openrouter", "OpenRouter",
                     "https://openrouter.ai/api/v1",
                     "poolside/laguna-s-2.1:free, z-ai/glm-5.3")
+# Token Harbor (tokenharbor.ai/docs): one "Universal Key" (thk_live_...)
+# reaches every model in its catalogue; OpenAI-compatible
+# /v1/chat/completions + GET /v1/models (key required). It also speaks the
+# Anthropic /v1/messages shape at https://tokenharbor.ai, but the OpenAI
+# route is used here so tool calls work the same as every other gateway.
+# Free variants carry a ":free" suffix; Fetch list returns the live ids.
+_TOKENHARBOR = _slug("tokenharbor", "Token Harbor",
+                     "https://tokenharbor.ai/v1", "qwen3.7-max")
 _ANTHROPIC = _slug("anthropic", "Anthropic (Claude)",
                    "https://api.anthropic.com",
                    "claude-sonnet-4-8, claude-opus-4-6",
@@ -199,7 +207,7 @@ _SOMETHING_ELSE = _slug("custom", "Something else (set the base URL "
 COMMON_PROVIDERS = [
     # the free-tier gateways first -- the pipes a fresh user is most
     # likely to arrive at (freellm.net's directory order)
-    _OPENROUTER, _UNOROUTER, _OPENCODE, _OPENCODE_ZEN, _NVIDIA,
+    _OPENROUTER, _TOKENHARBOR, _UNOROUTER, _OPENCODE, _OPENCODE_ZEN, _NVIDIA,
     _MODELSCOPE, _HUGGINGFACE, _LLM7, _KILO, _REQUESTY, _VERCEL_AI,
     _GITHUB_MODELS, _SAMBANOVA, _SILICONFLOW,
     _DASHSCOPE, _BIGMODEL, _ZAI, _DEEPSEEK,
@@ -225,6 +233,7 @@ def _startswith(prefix):
 
 KEY_FINGERPRINTS = [
     (_startswith("sk-or-v1-"), _OPENROUTER),
+    (_startswith("thk_"), _TOKENHARBOR),   # thk_live_<64 chars>
     (_startswith("nvapi-"), _NVIDIA),
     (_startswith("oc_sk_"), _OPENCODE),
     (_startswith("sk-ant-"), _ANTHROPIC),

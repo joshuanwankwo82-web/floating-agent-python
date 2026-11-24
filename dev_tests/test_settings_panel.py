@@ -459,11 +459,10 @@ def part_b():
           "(real generation bytes)",
           url == "https://api.fakeprovider.com/chat/completions"
           and ok is True and "can chat" in detail)
-    check("the check sends the SAME shape a build sends (no max_tokens "
-          "squeeze -- a 1-token ping can slip past OpenRouter-style "
-          "credit gates that block every real build call)",
+    check("the check ping is CAPPED (an uncapped ping burned a full reply "
+          "per click and made credit-gated gateways flip models to 402)",
           posts and posts[0][1].get("model") == "fake-model-1"
-          and "max_tokens" not in posts[0][1])
+          and posts[0][1].get("max_tokens") == sc.CHECK_PING_MAX_TOKENS)
     (ok, detail), _u = with_post_code(200, text='{"not json at all": }')
     check("the check passes on a 2xx (body content isn't inspected -- "
           "the runtime owns shape validation)", ok is True)
@@ -483,17 +482,18 @@ def part_b():
           ok is False and "Key rejected" in detail)
 
     (ok, detail), url = with_post_code(429)
-    check("HTTP 429 (working key, currently throttled) is green-with-a-"
-          "note, the truthful middle ground",
-          ok is True and "rate-limited" in detail.lower())
+    check("HTTP 429 (working key, currently throttled) is TEMPORARY: "
+          "ok=None so the panel keeps the previous status",
+          ok is None and "rate-limited" in detail.lower())
 
     (ok, detail), url = with_post_code(404)
     check("HTTP 404 names the model/endpoint problem plainly",
           ok is False and "404" in detail)
 
     (ok, detail), url = with_post_code(503)
-    check("any 5xx is an honest server-error red-x",
-          ok is False and "Server error" in detail)
+    check("any 5xx is TEMPORARY (provider outage), never a red-x that "
+          "'Remove not connected' would delete",
+          ok is None and "temporarily unavailable" in detail)
 
     def _raise_conn_error(*a, **k):
         raise _requests.exceptions.ConnectionError("no route to host")
@@ -645,6 +645,22 @@ def part_c():
         check("connection summary shows connected, failed, and unchecked totals",
               panel._connection_counts_lbl.cget("text")
               == "Connected: 1  |  Not connected: 1  |  Not checked: 5")
+
+        # A TEMPORARY result (ok=None: rate limit / outage) must not flip a
+        # working model to "Not connected" -- the cause of models
+        # "disconnecting" on a re-check and then being bulk-removed.
+        panel._finish_check("Thinking", t1["id"], None,
+                            "Rate-limited right now (HTTP 429)")
+        widgets = panel._row_widgets[("Thinking", t1["id"])]
+        check("a temporary check result keeps a Connected model Connected",
+              "Connected" in widgets["status_lbl"].cget("text")
+              and "Not connected" not in widgets["status_lbl"].cget("text"))
+        check("...and the totals are unchanged",
+              panel._connection_counts_lbl.cget("text")
+              == "Connected: 1  |  Not connected: 1  |  Not checked: 5")
+        check("...and the reason is kept on the entry for the user to read",
+              next(e for e in panel._data["Thinking"] if e["id"] == t1["id"])
+              ["detail"].startswith("Rate-limited"))
 
         ask_prompts = []
         original_askyesno = sp.messagebox.askyesno

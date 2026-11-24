@@ -1407,11 +1407,12 @@ def main():
              "api_key": "sk-ant-fake", "model": "claude-fake-1"})
         act_script._dispatch_generic_http(
             ant_entry, "SYS", "USR", "claude-fake-1")
-        check("CHECK and BUILD send the IDENTICAL max_tokens on "
-              "anthropic entries (parity, not a repeat of the blind "
-              "spot)",
-              [p["max_tokens"] for p in saved_payloads[-2:]].count(
-                  _pa.ANTHROPIC_MAX_TOKENS_DEFAULT) == 2)
+        check("the settings CHECK is capped (it must not reserve/spend a "
+              "build-sized budget per click) while the BUILD keeps the "
+              "shared max_tokens constant",
+              saved_payloads[-2]["max_tokens"] == _sc.CHECK_PING_MAX_TOKENS
+              and saved_payloads[-1]["max_tokens"]
+              == _pa.ANTHROPIC_MAX_TOKENS_DEFAULT)
     finally:
         _rq2.post = orig_post2
 

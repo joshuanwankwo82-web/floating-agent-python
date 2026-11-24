@@ -18,8 +18,9 @@ entries) the check now performs a REAL MINIMAL GENERATION -- a 1-token
 "this entry can answer", not merely "this key authenticates". A bare
 model-listing check showed "Connected" for an account that was out of
 balance: its key was valid for listing, and every real build call
-against it failed with 402. The token this burns per click is fractions
-of a cent and it buys the truth. Checks that carry a different, still
+against it failed with 402. The ping is CAPPED (see SPEND-SAFE CHECKING
+below) and "Check all" verifies through free catalog/account lookups,
+so checking no longer drains the balance it is trying to verify. Checks that carry a different, still
 honest claim say so in their own wording: embed checkers do a real
 1-item embed; image checkers verify credentials/balance/endpoint
 without rendering (rendering costs real credits -- read each one's
@@ -32,6 +33,42 @@ background thread, never directly on the Tk main thread -- see
 settings_panel.py's `_run_check` for the threading/callback wiring.
 """
 import os
+import re
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+# -------------------------------------------------------------------------
+# SPEND-SAFE CHECKING (fixes "Check all drains my tokens and flips models
+# between Connected / Not connected"):
+#
+# 1. The single-row ping is CAPPED (CHECK_PING_MAX_TOKENS). The old ping
+#    sent NO max_tokens (8192 on Anthropic) so every click could generate a
+#    full reply -- reasoning models think for hundreds of tokens -- and
+#    credit-gated gateways (OpenRouter style) reserved each model's FULL
+#    max output against the balance, so as the checks themselves spent the
+#    balance, the pricier models started answering 402 -> red.
+# 2. "Check all" spends NO tokens: one free GET of the provider's model
+#    catalog per (base URL, key) proves the key and that each model is
+#    offered; OpenRouter's free /key endpoint reports remaining credit.
+#    Only a model the catalog can't vouch for gets a capped ping.
+# 3. Requests per provider are paced (sequential within a key, a short gap
+#    between pings) instead of a burst that trips free-tier rate limits.
+# 4. TEMPORARY failures (429, 5xx, timeouts, connection drops) return
+#    ok=None == "couldn't tell right now": the panel keeps the model's
+#    previous status instead of turning a working model red (and "Remove
+#    not connected" can no longer delete it).
+# -------------------------------------------------------------------------
+CHECK_PING_MAX_TOKENS = 16          # enough for "OK" on every provider's minimum
+CHECK_PING_PROMPT = "Reply with the single word OK."
+CHECK_ALL_PARALLEL_PROVIDERS = 4    # different providers checked side by side
+CHECK_ALL_PING_SPACING_S = 1.2      # gap between pings on the SAME key
+TRANSIENT_HTTP = {408, 409, 425, 429, 500, 502, 503, 504, 520, 521, 522,
+                  523, 524, 529}
+_TRANSIENT_TEXT = re.compile(
+    r"\b(429|500|502|503|504|529)\b|rate.?limit|too many requests|timed? ?out|"
+    r"timeout|temporar|overloaded|unavailable|try again|connection (reset|"
+    r"aborted|refused)|max retries", re.IGNORECASE)
 
 
 def check_gemini(entry):
@@ -333,17 +370,16 @@ def check_generic_http(entry):
     through the panel's "+ Add Model" button), in THAT ENTRY'S OWN
     provider dialect (OpenAI-compatible or Anthropic -- see
     provider_autodetect). When a model name is stored, the check POSTS
-    one real ping WITH THE SAME REQUEST SHAPE THE BUILD PIPELINE SENDS
-    (URL, headers, and body all come from provider_autodetect's shared
-    builders -- no max_tokens squeeze on OpenAI-style entries, the
-    shared default on Anthropic ones, where max_tokens is mandatory) so
-    the green check means THIS ENTRY CAN BUILD, not merely that some
-    tiny call slipped past a credit gate. The old GET-only check said
-    "Connected" for an entry whose real builds all failed (a dashboard-
-    page URL answered the GET; an out-of-balance key answered the GET
-    too); both misleadings are gone. With NO model name stored the
-    honest reachability claim is kept and labelled as exactly that --
-    generation explicitly NOT verified."""
+    one CAPPED ping (CHECK_PING_MAX_TOKENS) to the same URL with the same
+    headers the build pipeline uses, so green still means "this model
+    really generated", at a cost of a few dozen tokens instead of a full
+    reply. Credit is checked through the provider's free account
+    endpoint where one exists (OpenRouter /key) rather than by making a
+    max-size reservation. Temporary failures (429, 5xx, timeouts,
+    dropped connections) return ok=None so the panel keeps the previous
+    status. With NO model name stored the honest reachability claim is
+    kept and labelled as exactly that -- generation explicitly NOT
+    verified."""
     base_url = (entry.get("base_url") or "").strip()
     if not base_url:
         return False, "No API base URL configured to check."
@@ -370,29 +406,60 @@ def check_generic_http(entry):
         except Exception as exc:  # noqa: BLE001
             return False, _short(exc)
 
-    # URL and payload come from the SAME builders act_script's runtime
-    # dispatch uses -- the parity that ended green-at-check/red-at-build:
-    # act_script._dispatch_generic_http sends NO max_tokens at all on
-    # OpenAI-style entries (build answers need open-ended generations),
-    # and credit-gated providers (OpenRouter style) pre-flight
-    # affordability against the requested reservation, so max_tokens=1
-    # used to slip past empty balances and show green while every real
-    # build call failed with 402 on the very same key. Anthropic
-    # REQUIRES max_tokens, so both paths use provider_autodetect's
-    # shared default constant there instead. The ping still only
-    # GENERATES a word or two, either way.
+    # URL/headers come from the SAME builders act_script's runtime uses
+    # (dialect parity). The body is a CAPPED ping -- see SPEND-SAFE
+    # CHECKING at the top: an uncapped ping burned real tokens on every
+    # click and made credit-gated gateways flip models to 402.
     url = provider_autodetect.chat_url(base_url, style)
-    payload = provider_autodetect.chat_payload(style, model, "", "ping")
+    payload = provider_autodetect.chat_payload(
+        style, model, "", CHECK_PING_PROMPT, max_tokens=CHECK_PING_MAX_TOKENS)
     try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=15)
+        resp = requests.post(url, headers=headers, json=payload, timeout=20)
+        if (resp.status_code == 400 and style != provider_autodetect.ANTHROPIC_API_STYLE
+                and "max_tokens" in (resp.text or "")):
+            # Newer OpenAI-family models refuse `max_tokens` and want
+            # `max_completion_tokens`; keep the cap, just rename it.
+            payload.pop("max_tokens", None)
+            payload["max_completion_tokens"] = CHECK_PING_MAX_TOKENS
+            resp = requests.post(url, headers=headers, json=payload, timeout=20)
+    except requests.exceptions.Timeout:
+        return None, ("The provider didn't answer within 20 s -- probably busy. "
+                      "Status left unchanged; try again in a minute.")
+    except requests.exceptions.ConnectionError as exc:
+        return None, (f"Couldn't reach {base_url} right now ({_short(exc)}). "
+                      "Status left unchanged -- check your internet or the base URL.")
     except Exception as exc:  # noqa: BLE001
         return False, _short(exc)
     code = resp.status_code
     if 200 <= code < 300:
-        return True, f"Generated a reply with {model} -- this entry can chat."
-    if code == 401 or code == 403:
-        return False, (f"Key rejected (HTTP {code}) -- generate a fresh API "
+        detail = f"Generated a reply with {model} -- this entry can chat."
+        info = openrouter_key_info(base_url, entry.get("api_key", ""))
+        verdict = _credit_verdict(info, model)
+        if verdict is not None and verdict[0] is False:
+            return verdict
+        if verdict is not None:
+            detail += " " + verdict[1]
+        return True, detail
+    return _classify_http_failure(code, model, resp)
+
+
+def _body_hint(resp):
+    try:
+        return (resp.text or "").strip().replace("\n", " ")[:120]
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _classify_http_failure(code, model, resp=None):
+    """Non-2xx -> (ok, detail). ok=None means TEMPORARY: keep the old status."""
+    if code == 401:
+        return False, ("Key rejected (HTTP 401) -- generate a fresh API "
                        "key and update this entry.")
+    if code == 403:
+        hint = _body_hint(resp) if resp is not None else ""
+        return False, ("Access refused (HTTP 403) -- the key is invalid, or a "
+                       "spend/budget limit on it is used up"
+                       + (f": {hint}" if hint else "."))
     if code == 402:
         return False, ("No usable balance on this account (HTTP 402) -- "
                        "top up at the provider's billing page, or swap "
@@ -407,20 +474,200 @@ def check_generic_http(entry):
                        "the URL field, for example "
                        "https://api.deepseek.com for DeepSeek.")
     if code == 429:
-        # Rate-limited NOW but clearly a working, recognised key.
-        return True, (f"Key authenticates and {model} is recognised -- "
-                      "currently rate-limited (HTTP 429); generation will "
-                      "work once the limit window resets.")
-    body_hint = ""
+        return None, (f"Rate-limited right now (HTTP 429) -- the key works but "
+                      f"the provider is throttling requests. Status left "
+                      "unchanged; it clears when the limit window resets.")
+    if code in TRANSIENT_HTTP or code >= 500:
+        hint = _body_hint(resp) if resp is not None else ""
+        return None, (f"Provider temporarily unavailable (HTTP {code}) -- "
+                      "status left unchanged, try again shortly."
+                      + (f" Server said: {hint}" if hint else ""))
+    hint = _body_hint(resp) if resp is not None else ""
+    return False, (f"Rejected (HTTP {code})"
+                   + (f" -- server says: {hint}" if hint else ""))
+
+
+# -------------------------------------------------------------------------
+# Free account lookups (no generation, no tokens)
+# -------------------------------------------------------------------------
+OPENROUTER_HOSTS = ["openrouter.ai"]   # hosts that serve OpenRouter's /key endpoint
+
+
+def openrouter_key_info(base_url, api_key):
+    """OpenRouter's free GET /api/v1/key: remaining credit on this key and
+    free-model requests left today. None for other providers or on error."""
+    if not api_key or not any(h in (base_url or "").lower() for h in OPENROUTER_HOSTS):
+        return None
     try:
-        body_hint = (resp.text or "").strip().replace("\n", " ")[:120]
+        import requests
+        resp = requests.get(base_url.rstrip("/") + "/key", timeout=8,
+                            headers={"Authorization": f"Bearer {api_key}"})
+        if resp.status_code != 200:
+            return None
+        data = resp.json().get("data")
+        return data if isinstance(data, dict) else None
     except Exception:  # noqa: BLE001
-        pass
-    if 400 <= code < 500:
-        return False, (f"Rejected (HTTP {code})"
-                       + (f" -- server says: {body_hint}" if body_hint else ""))
-    return False, (f"Server error (HTTP {code})"
-                   + (f" -- {body_hint}" if body_hint else ""))
+        return None
+
+
+def _is_free_model_id(model):
+    return str(model or "").lower().endswith(":free")
+
+
+def _credit_verdict(info, model):
+    """(ok, note) from OpenRouter key info, or None when nothing to say.
+    ok False only when a PAID model can't run (no credit left / budget spent)."""
+    if not info:
+        return None
+    notes = []
+    free_req = info.get("free_model_daily_requests") or {}
+    remaining = info.get("limit_remaining")
+    budget = info.get("effective_budget") or {}
+    if _is_free_model_id(model):
+        if isinstance(free_req.get("remaining"), (int, float)):
+            notes.append(f"{int(free_req['remaining'])} free requests left today.")
+        return (True, " ".join(notes)) if notes else None
+    if isinstance(remaining, (int, float)) and remaining <= 0:
+        return False, ("This key's credit limit is used up -- paid models will "
+                       "fail with HTTP 402. Top up or raise the key's limit on "
+                       "openrouter.ai, or use a ':free' model.")
+    if isinstance(budget.get("remaining_usd"), (int, float)) and budget["remaining_usd"] <= 0:
+        return False, ("This key's spending budget is used up -- requests will be "
+                       "refused until it resets or is raised on openrouter.ai.")
+    if isinstance(remaining, (int, float)):
+        notes.append(f"${remaining:,.2f} credit left on this key.")
+    return (True, " ".join(notes)) if notes else None
+
+
+# -------------------------------------------------------------------------
+# "Check all": grouped, paced, deduplicated, and token-free where possible
+# -------------------------------------------------------------------------
+def _catalog(entry):
+    """One free GET of the provider's model list.
+    -> ("ok", set_of_ids) | ("rejected", detail) | ("transient", detail) | ("none", detail)"""
+    import requests
+    import provider_autodetect
+    base_url = (entry.get("base_url") or "").strip()
+    style = provider_autodetect.entry_api_style(entry)
+    hint = provider_autodetect.preset_for_base_url(base_url) or {}
+    url = provider_autodetect.models_url(
+        base_url, style, override=hint.get("models_url_override", ""))
+    if not url:
+        return "none", "no model-listing URL for this base"
+    try:
+        resp = requests.get(url, timeout=10, headers=provider_autodetect.headers_for(
+            style, entry.get("api_key", "")))
+    except requests.exceptions.RequestException as exc:
+        return "transient", (f"Couldn't reach {base_url} right now ({_short(exc)}). "
+                             "Status left unchanged.")
+    code = resp.status_code
+    if code in (401, 403):
+        return "rejected", _classify_http_failure(code, "", resp)[1]
+    if code in TRANSIENT_HTTP or code >= 500:
+        return "transient", _classify_http_failure(code, "", resp)[1]
+    if code >= 400:
+        return "none", f"HTTP {code}"
+    try:
+        data = resp.json()
+    except ValueError:
+        return "none", "catalog wasn't JSON"
+    items = (data.get("data") or data.get("models") or []) if isinstance(data, dict) else data
+    ids = set()
+    for item in items or []:
+        mid = (item.get("id") or item.get("name") or item.get("model")) if isinstance(item, dict) else item
+        if mid:
+            ids.add(str(mid).removeprefix("models/").lower())
+    return ("ok", ids) if ids else ("none", "empty catalog")
+
+
+def _check_provider_group(group, on_result, should_stop, spacing):
+    """All entries sharing one (base URL, key): ONE catalog call, one
+    credit lookup, then a capped ping only for models the catalog can't
+    vouch for. Duplicate models are checked once."""
+    first = group[0][1]
+    state, payload = _catalog(first)
+    if state in ("rejected", "transient"):
+        ok = False if state == "rejected" else None
+        for faculty, entry in group:
+            on_result(faculty, entry["id"], ok, payload)
+        return
+    info = openrouter_key_info(first.get("base_url", ""), first.get("api_key", ""))
+    by_model = {}
+    for faculty, entry in group:
+        by_model.setdefault((entry.get("model") or "").strip(), []).append((faculty, entry))
+    pinged = False
+    for model, members in by_model.items():
+        if should_stop():
+            return
+        if state == "ok" and model.lower() in payload:
+            result = (True, f"Key works and the provider offers {model} -- "
+                            "checked without spending any tokens.")
+            verdict = _credit_verdict(info, model)
+            if verdict is not None:
+                result = verdict if verdict[0] is False else (True, result[1] + " " + verdict[1])
+        else:
+            if pinged and spacing:
+                time.sleep(spacing)
+            result = run_check(dict(members[0][1]))
+            pinged = True
+        for faculty, entry in members:
+            on_result(faculty, entry["id"], result[0], result[1])
+
+
+def check_many(items, on_result, should_stop=lambda: False,
+               max_parallel=CHECK_ALL_PARALLEL_PROVIDERS,
+               spacing=CHECK_ALL_PING_SPACING_S):
+    """The "Check all" engine. `items` is [(faculty, entry_dict), ...];
+    on_result(faculty, entry_id, ok, detail) is called once per entry from
+    worker threads (ok may be None = temporary, keep the old status).
+    Blocks until every entry has a result. Never raises."""
+    groups, solo = {}, []
+    for faculty, entry in items:
+        kind = entry.get("check_kind") or "generic_http"
+        if kind == "generic_http" and (entry.get("model") or "").strip() \
+                and (entry.get("base_url") or "").strip():
+            key = ((entry.get("base_url") or "").strip().rstrip("/").lower(),
+                   entry.get("api_key") or "", entry.get("api_style") or "")
+            groups.setdefault(key, []).append((faculty, entry))
+        else:
+            solo.append((faculty, entry))
+    lock = threading.Lock()
+    done = set()
+
+    def _safe_result(faculty, entry_id, ok, detail):
+        with lock:
+            if (faculty, entry_id) in done:
+                return
+            done.add((faculty, entry_id))
+        try:
+            on_result(faculty, entry_id, ok, detail)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _run_group(group):
+        try:
+            _check_provider_group(group, _safe_result, should_stop, spacing)
+        except Exception as exc:  # noqa: BLE001
+            for faculty, entry in group:
+                _safe_result(faculty, entry["id"], None,
+                             f"Check failed unexpectedly: {_short(exc)}")
+
+    def _run_solo(pair):
+        faculty, entry = pair
+        if should_stop():
+            return
+        ok, detail = run_check(dict(entry))
+        _safe_result(faculty, entry["id"], ok, detail)
+
+    with ThreadPoolExecutor(max_workers=max(1, max_parallel),
+                            thread_name_prefix="FridayCheckAll") as pool:
+        futures = [pool.submit(_run_group, g) for g in groups.values()]
+        futures += [pool.submit(_run_solo, p) for p in solo]
+        for f in futures:
+            try:
+                f.result()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def fetch_model_list(entry, limit=64):
@@ -542,10 +789,17 @@ CHECKERS = {
 def run_check(entry):
     """Dispatches to the right checker for `entry` based on its
     check_kind, falling back to the generic HTTP reachability check for
-    anything unrecognized. Never raises."""
+    anything unrecognized. Never raises. Returns (ok, detail) where ok is
+    True / False / None (None = temporary problem, keep previous status)."""
     kind = entry.get("check_kind") or "generic_http"
     fn = CHECKERS.get(kind, check_generic_http)
     try:
-        return fn(entry)
+        ok, detail = fn(entry)
     except Exception as exc:  # noqa: BLE001
-        return False, f"Check failed unexpectedly: {_short(exc)}"
+        ok, detail = False, f"Check failed unexpectedly: {_short(exc)}"
+    # SDK-based checkers (Gemini/Groq/Mistral...) surface throttling and
+    # outages as exception text; those are temporary, not "disconnected".
+    if ok is False and kind != "generic_http" and _TRANSIENT_TEXT.search(detail or ""):
+        return None, (f"{detail} -- looks temporary (rate limit / outage); "
+                      "status left unchanged.")
+    return ok, detail
